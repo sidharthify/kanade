@@ -32,6 +32,7 @@ final class MusicPlayer {
     // currentTime updates
     private var progressTimer: Timer?
     private var currentSeekOffset: TimeInterval = 0
+    private var scheduleToken: Int = 0
 
     // MARK: - Init
     init() {
@@ -106,11 +107,33 @@ final class MusicPlayer {
 
     private func scheduleFile() {
         guard let file = audioFile else { return }
+        let token = nextScheduleToken()
         playerNode.scheduleFile(file, at: nil) { [weak self] in
+            guard let self, self.scheduleToken == token else { return }
             DispatchQueue.main.async {
-                self?.handlePlaybackFinished()
+                self.handlePlaybackFinished()
             }
         }
+    }
+
+    private func scheduleSegment(startingFrame: AVAudioFramePosition, frameCount: AVAudioFrameCount) {
+        guard let file = audioFile else { return }
+        let token = nextScheduleToken()
+        playerNode.scheduleSegment(file, startingFrame: startingFrame, frameCount: frameCount, at: nil) { [weak self] in
+            guard let self, self.scheduleToken == token else { return }
+            DispatchQueue.main.async {
+                self.handlePlaybackFinished()
+            }
+        }
+    }
+
+    private func nextScheduleToken() -> Int {
+        scheduleToken += 1
+        return scheduleToken
+    }
+
+    private func invalidateSchedule() {
+        scheduleToken += 1
     }
 
     // MARK: - Playback controls
@@ -133,6 +156,7 @@ final class MusicPlayer {
     }
 
     func stop() {
+        invalidateSchedule()
         playerNode.stop()
         isPlaying = false
         currentTime = 0
@@ -141,32 +165,30 @@ final class MusicPlayer {
     }
 
     func seek(to time: TimeInterval) {
-        guard let file = audioFile else { return }
+        guard audioFile != nil else { return }
 
         let wasPlaying = isPlaying
+        let clampedTime = min(max(0, time), duration)
+        invalidateSchedule()
         playerNode.stop()
 
-        let seekFrame = AVAudioFramePosition(time * sampleRate)
+        let seekFrame = AVAudioFramePosition(clampedTime * sampleRate)
         let safeFrame = max(0, min(seekFrame, AVAudioFramePosition(frameCount)))
         let remainingFrames = AVAudioFrameCount(AVAudioFramePosition(frameCount) - safeFrame)
 
         guard remainingFrames > 0 else {
             currentTime = duration
             isPlaying = false
+            currentSeekOffset = duration
+            stopProgressTimer()
+            updateNowPlayingInfo()
             return
         }
 
-        playerNode.scheduleSegment(file,
-                                   startingFrame: safeFrame,
-                                   frameCount: remainingFrames,
-                                   at: nil) { [weak self] in
-            DispatchQueue.main.async {
-                self?.handlePlaybackFinished()
-            }
-        }
-        
-        currentSeekOffset = time
-        currentTime = time
+        scheduleSegment(startingFrame: safeFrame, frameCount: remainingFrames)
+
+        currentSeekOffset = Double(safeFrame) / sampleRate
+        currentTime = currentSeekOffset
 
         if wasPlaying {
             playerNode.play()
