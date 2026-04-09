@@ -8,6 +8,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
+import MediaPlayer
 
 // MARK: - Document picker wrapper
 struct AudioFilePicker: UIViewControllerRepresentable {
