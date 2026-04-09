@@ -62,7 +62,7 @@ jobs:
 
       - name: Export IPA
         env:
-          EXPORT_METHOD: app-store-connect
+          EXPORT_METHOD: development
           TEAM_ID: F76Q3J6F82
           BUNDLE_ID: com.sidharthify.kanade
         run: |
