@@ -47,6 +47,10 @@ final class MusicPlayer {
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private let mixerNode = AVAudioMixerNode()
+    private let eq = EQManager.shared
+
+    // audio format info for display (e.g. "FLAC · 1011 kbps · 48000")
+    var audioFormatLabel: String = ""
 
     private var audioFile: AVAudioFile?
     private var sampleRate: Double = 44100
@@ -83,8 +87,13 @@ final class MusicPlayer {
     private func setupEngine() {
         engine.attach(playerNode)
         engine.attach(mixerNode)
-        engine.connect(playerNode, to: mixerNode, format: nil)
+        engine.attach(eq.eqNode)
+
+        // signal path: playerNode -> eq -> mixer -> output
+        engine.connect(playerNode, to: eq.eqNode, format: nil)
+        engine.connect(eq.eqNode, to: mixerNode, format: nil)
         engine.connect(mixerNode, to: engine.mainMixerNode, format: nil)
+
         do {
             try engine.start()
         } catch {
@@ -203,7 +212,8 @@ final class MusicPlayer {
             audioFile = file
             sampleRate = file.processingFormat.sampleRate
             frameCount = AVAudioFrameCount(file.length)
-            duration = Double(frameCount) / sampleRate
+            let computedDuration = sampleRate > 0 ? Double(frameCount) / sampleRate : 0
+            duration = computedDuration.isFinite ? max(0, computedDuration) : 0
 
             if let title = title, !title.isEmpty {
                 self.currentTitle = title
@@ -220,8 +230,22 @@ final class MusicPlayer {
                 }
             }
 
+            // build format label for display in the seek bar
+            audioFormatLabel = buildFormatLabel(for: file)
+
             scheduleFile()
             updateNowPlayingInfo()
+
+            // fetch lyrics asynchronously
+            if let trackId {
+                LyricsManager.shared.fetchLyrics(
+                    for: trackId,
+                    title: title ?? url.deletingPathExtension().lastPathComponent,
+                    artist: artist,
+                    album: album,
+                    duration: duration
+                )
+            }
         } catch {
             print("[MusicPlayer] Load error: \(error)")
         }
@@ -277,7 +301,8 @@ final class MusicPlayer {
     func seek(to time: TimeInterval) {
         guard audioFile != nil else { return }
         let wasPlaying = isPlaying
-        let clampedTime = min(max(0, time), duration)
+        let safeDuration = duration.isFinite ? max(0, duration) : 0
+        let clampedTime = min(max(0, time), safeDuration)
         invalidateSchedule()
         playerNode.stop()
 
@@ -286,8 +311,8 @@ final class MusicPlayer {
         let remainingFrames = AVAudioFrameCount(AVAudioFramePosition(frameCount) - safeFrame)
 
         guard remainingFrames > 0 else {
-            currentSeekOffset = duration
-            currentTime = duration
+            currentSeekOffset = safeDuration
+            currentTime = safeDuration
             isPlaying = false
             stopProgressTimer()
             updateNowPlayingInfo()
@@ -319,8 +344,11 @@ final class MusicPlayer {
         guard isPlaying,
               let nodeTime = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
-        let elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
-        currentTime = min(currentSeekOffset + elapsed, duration)
+          guard playerTime.sampleRate.isFinite, playerTime.sampleRate > 0 else { return }
+          let elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
+          guard elapsed.isFinite else { return }
+          let safeDuration = duration.isFinite ? max(0, duration) : 0
+          currentTime = min(max(0, currentSeekOffset + elapsed), safeDuration)
     }
 
     private func handlePlaybackFinished() {
@@ -387,6 +415,35 @@ final class MusicPlayer {
             @unknown default: break
             }
         }
+    }
+
+    // MARK: - Format label
+
+    private func buildFormatLabel(for file: AVAudioFile) -> String {
+        let format = file.processingFormat
+        let rate = Int(format.sampleRate)
+
+        // guess the codec name from the file extension since AVAudioFile doesn't expose it directly
+        let ext = file.url.pathExtension.uppercased()
+        let codec: String
+        switch ext {
+        case "FLAC": codec = "FLAC"
+        case "M4A", "AAC": codec = "AAC"
+        case "MP3": codec = "MP3"
+        case "WAV", "AIFF": codec = ext
+        default: codec = ext.isEmpty ? "PCM" : ext
+        }
+
+        // approximate bitrate from file size / duration
+        var bitrateStr = ""
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: file.url.path),
+           let size = attrs[.size] as? Int64,
+           duration > 0 {
+            let kbps = Int((Double(size) * 8) / (duration * 1000))
+            bitrateStr = " · \(kbps) kbps"
+        }
+
+        return "\(codec)\(bitrateStr) · \(rate)"
     }
 
     // MARK: - Route changes
