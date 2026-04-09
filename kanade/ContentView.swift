@@ -278,17 +278,7 @@ struct LibraryView: View {
     }
 
     private func play(track: TrackRecord) {
-        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let absoluteURL = docsDir.appendingPathComponent(track.filename)
-        player.load(
-            url: absoluteURL,
-            trackId: track.id,
-            title: track.title,
-            artist: track.artist,
-            album: track.album,
-            hasArtwork: track.hasArtwork
-        )
-        player.play()
+        player.loadQueue(tracks: tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
     }
 
     private func removeTrack(_ track: TrackRecord) {
@@ -357,17 +347,7 @@ struct AlbumDetailView: View {
     }
 
     private func play(track: TrackRecord) {
-        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let absoluteURL = docsDir.appendingPathComponent(track.filename)
-        player.load(
-            url: absoluteURL,
-            trackId: track.id,
-            title: track.title,
-            artist: track.artist,
-            album: track.album,
-            hasArtwork: track.hasArtwork
-        )
-        player.play()
+        player.loadQueue(tracks: tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
     }
 
     private func remove(_ track: TrackRecord) {
@@ -418,17 +398,7 @@ struct ArtistDetailView: View {
     }
 
     private func play(track: TrackRecord) {
-        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let absoluteURL = docsDir.appendingPathComponent(track.filename)
-        player.load(
-            url: absoluteURL,
-            trackId: track.id,
-            title: track.title,
-            artist: track.artist,
-            album: track.album,
-            hasArtwork: track.hasArtwork
-        )
-        player.play()
+        player.loadQueue(tracks: tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
     }
 
     private func remove(_ track: TrackRecord) {
@@ -500,6 +470,17 @@ struct MiniPlayerView: View {
     }
 }
 
+// MARK: - Volume slider (wraps MPVolumeView since AVAudioSession.outputVolume is read-only)
+struct VolumeSlider: UIViewRepresentable {
+    func makeUIView(context: Context) -> MPVolumeView {
+        let v = MPVolumeView()
+        v.showsRouteButton = false
+        v.tintColor = .white
+        return v
+    }
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+}
+
 // MARK: - Player
 struct PlayerView: View {
     @Environment(MusicPlayer.self) private var player
@@ -510,43 +491,45 @@ struct PlayerView: View {
         ZStack {
             LinearGradient(
                 colors: [Color.black, Color(white: 0.08)],
-                startPoint: .top,
-                endPoint: .bottom
+                startPoint: .top, endPoint: .bottom
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 24) {
+            VStack(spacing: 20) {
                 Spacer(minLength: 8)
 
+                // Artwork — bounces on play/pause
                 ArtworkImage(
                     trackId: player.currentTrackId,
                     hasArtwork: player.currentHasArtwork,
                     size: artworkSize,
                     cornerRadius: 20
                 )
-                .shadow(color: Color.black.opacity(0.4), radius: 20, x: 0, y: 12)
+                .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 12)
+                .scaleEffect(player.isPlaying ? 1.0 : 0.88)
+                .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
 
-                VStack(spacing: 6) {
+                // Track info
+                VStack(spacing: 4) {
                     Text(player.currentTitle)
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-
                     Text(player.currentArtist ?? "Unknown Artist")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.6))
                         .lineLimit(1)
-
                     if let album = player.currentAlbum {
                         Text(album)
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.45))
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.4))
                             .lineLimit(1)
                     }
                 }
                 .padding(.horizontal)
 
-                VStack(spacing: 6) {
+                // Seek bar
+                VStack(spacing: 4) {
                     Slider(
                         value: isSeeking ? $seekValue : .init(
                             get: { player.currentTime },
@@ -574,37 +557,60 @@ struct PlayerView: View {
                 }
                 .padding(.horizontal)
 
-                HStack(spacing: 48) {
-                    Button {
-                        player.seek(to: max(0, player.currentTime - 10))
-                    } label: {
-                        Image(systemName: "gobackward.10")
+                // Volume
+                VolumeSlider()
+                    .frame(height: 32)
+                    .padding(.horizontal)
+
+                // Main controls: prev · play/pause · next
+                HStack(spacing: 44) {
+                    Button { player.skipPrevious() } label: {
+                        Image(systemName: "backward.fill")
                             .font(.title)
                             .foregroundStyle(.white)
                     }
 
-                    Button {
-                        player.isPlaying ? player.pause() : player.play()
-                    } label: {
+                    Button { player.isPlaying ? player.pause() : player.play() } label: {
                         Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.system(size: 72))
                             .foregroundStyle(.white)
                     }
 
-                    Button {
-                        player.seek(to: min(player.duration, player.currentTime + 10))
-                    } label: {
-                        Image(systemName: "goforward.10")
+                    Button { player.skipNext() } label: {
+                        Image(systemName: "forward.fill")
                             .font(.title)
                             .foregroundStyle(.white)
                     }
                 }
 
+                // Shuffle + Repeat
+                HStack(spacing: 48) {
+                    Button {
+                        player.shuffleEnabled.toggle()
+                    } label: {
+                        Image(systemName: "shuffle")
+                            .font(.title3)
+                            .foregroundStyle(player.shuffleEnabled ? .white : .white.opacity(0.35))
+                    }
+
+                    Button {
+                        switch player.repeatMode {
+                        case .off: player.repeatMode = .all
+                        case .all: player.repeatMode = .one
+                        case .one: player.repeatMode = .off
+                        }
+                    } label: {
+                        Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
+                            .font(.title3)
+                            .foregroundStyle(player.repeatMode == .off ? .white.opacity(0.35) : .white)
+                    }
+                }
+
+                // Lyrics placeholder (Stage 7)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Lyrics")
                         .font(.headline)
                         .foregroundStyle(.white)
-
                     Text("Lyrics coming soon.")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.6))
@@ -628,9 +634,7 @@ struct PlayerView: View {
     private func formatted(_ time: TimeInterval) -> String {
         guard time.isFinite, !time.isNaN else { return "0:00" }
         let total = Int(time)
-        let m = total / 60
-        let s = total % 60
-        return String(format: "%d:%02d", m, s)
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 

@@ -9,10 +9,14 @@ import AVFoundation
 import Observation
 import MediaPlayer
 
+enum RepeatMode: Int {
+    case off, one, all
+}
+
 @Observable
 final class MusicPlayer {
 
-    // MARK: - Values
+    // MARK: - Public state
     var isPlaying: Bool = false
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 0
@@ -23,28 +27,37 @@ final class MusicPlayer {
     var currentTrackId: String? = nil
     var currentHasArtwork: Bool = false
 
+    // Queue
+    var queue: [TrackRecord] = []
+    var currentQueueIndex: Int = 0
+
+    // Playback modes
+    var shuffleEnabled: Bool = false
+    var repeatMode: RepeatMode = .off
+
     var hasTrackLoaded: Bool { currentURL != nil }
+
     var currentArtworkURL: URL? {
         guard currentHasArtwork, let trackId = currentTrackId else { return nil }
-        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            return nil
-        }
+        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
         return docsDir.appendingPathComponent("Artwork").appendingPathComponent("\(trackId).jpg")
     }
 
+    // MARK: - Private audio graph
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private let mixerNode = AVAudioMixerNode()
 
-    // file scheduling
     private var audioFile: AVAudioFile?
     private var sampleRate: Double = 44100
     private var frameCount: AVAudioFrameCount = 0
 
-    // currentTime updates
     private var progressTimer: Timer?
     private var currentSeekOffset: TimeInterval = 0
     private var scheduleToken: Int = 0
+
+    // Tracks which indices have been played when shuffling
+    private var shuffledHistory: [Int] = []
 
     // MARK: - Init
     init() {
@@ -70,10 +83,8 @@ final class MusicPlayer {
     private func setupEngine() {
         engine.attach(playerNode)
         engine.attach(mixerNode)
-
         engine.connect(playerNode, to: mixerNode, format: nil)
         engine.connect(mixerNode, to: engine.mainMixerNode, format: nil)
-
         do {
             try engine.start()
         } catch {
@@ -81,7 +92,97 @@ final class MusicPlayer {
         }
     }
 
-    // MARK: - Load
+    // MARK: - Queue loading
+
+    // Load a list of tracks and start at a given index. This is the main entry point for the library.
+    func loadQueue(tracks: [TrackRecord], startingAt index: Int) {
+        queue = tracks
+        currentQueueIndex = max(0, min(index, tracks.count - 1))
+        shuffledHistory = [currentQueueIndex]
+        playCurrentQueueItem()
+    }
+
+    private func playCurrentQueueItem() {
+        guard currentQueueIndex < queue.count else { return }
+        let track = queue[currentQueueIndex]
+        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let url = docsDir.appendingPathComponent(track.filename)
+        load(
+            url: url,
+            trackId: track.id,
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            hasArtwork: track.hasArtwork
+        )
+        play()
+    }
+
+    // MARK: - Skip
+    func skipNext() {
+        guard !queue.isEmpty else { return }
+
+        if repeatMode == .one {
+            seek(to: 0)
+            play()
+            return
+        }
+
+        if shuffleEnabled {
+            let remaining = (0..<queue.count).filter { !shuffledHistory.contains($0) }
+            if let next = remaining.randomElement() {
+                currentQueueIndex = next
+                shuffledHistory.append(next)
+            } else {
+                // played everything — reset and continue if repeat all
+                shuffledHistory = []
+                if repeatMode == .all, let first = (0..<queue.count).randomElement() {
+                    currentQueueIndex = first
+                    shuffledHistory = [first]
+                } else {
+                    return
+                }
+            }
+        } else {
+            let next = currentQueueIndex + 1
+            if next < queue.count {
+                currentQueueIndex = next
+            } else if repeatMode == .all {
+                currentQueueIndex = 0
+            } else {
+                return
+            }
+        }
+        playCurrentQueueItem()
+    }
+
+    func skipPrevious() {
+        guard !queue.isEmpty else { return }
+
+        // go back to start of current track if we're more than 3s in
+        if currentTime > 3 {
+            seek(to: 0)
+            return
+        }
+
+        if shuffleEnabled, let prev = shuffledHistory.dropLast().last {
+            shuffledHistory.removeLast()
+            currentQueueIndex = prev
+        } else {
+            let prev = currentQueueIndex - 1
+            if prev >= 0 {
+                currentQueueIndex = prev
+            } else if repeatMode == .all {
+                currentQueueIndex = queue.count - 1
+            } else {
+                seek(to: 0)
+                return
+            }
+        }
+        playCurrentQueueItem()
+    }
+
+    // MARK: - Load (single file, internal or direct use)
     func load(
         url: URL,
         trackId: String? = nil,
@@ -100,12 +201,10 @@ final class MusicPlayer {
         do {
             let file = try AVAudioFile(forReading: url)
             audioFile = file
-
             sampleRate = file.processingFormat.sampleRate
             frameCount = AVAudioFrameCount(file.length)
             duration = Double(frameCount) / sampleRate
 
-            // Prefer database override, fallback to parsing, fallback to filename
             if let title = title, !title.isEmpty {
                 self.currentTitle = title
                 self.currentArtist = artist
@@ -116,9 +215,7 @@ final class MusicPlayer {
                     await MainActor.run {
                         self.currentTitle = metadata.title ?? url.deletingPathExtension().lastPathComponent
                         self.currentArtist = metadata.artist
-                        if self.currentAlbum == nil {
-                            self.currentAlbum = metadata.album
-                        }
+                        if self.currentAlbum == nil { self.currentAlbum = metadata.album }
                     }
                 }
             }
@@ -135,9 +232,7 @@ final class MusicPlayer {
         let token = nextScheduleToken()
         playerNode.scheduleFile(file, at: nil) { [weak self] in
             guard let self, self.scheduleToken == token else { return }
-            DispatchQueue.main.async {
-                self.handlePlaybackFinished()
-            }
+            DispatchQueue.main.async { self.handlePlaybackFinished() }
         }
     }
 
@@ -146,27 +241,17 @@ final class MusicPlayer {
         let token = nextScheduleToken()
         playerNode.scheduleSegment(file, startingFrame: startingFrame, frameCount: frameCount, at: nil) { [weak self] in
             guard let self, self.scheduleToken == token else { return }
-            DispatchQueue.main.async {
-                self.handlePlaybackFinished()
-            }
+            DispatchQueue.main.async { self.handlePlaybackFinished() }
         }
     }
 
-    private func nextScheduleToken() -> Int {
-        scheduleToken += 1
-        return scheduleToken
-    }
-
-    private func invalidateSchedule() {
-        scheduleToken += 1
-    }
+    private func nextScheduleToken() -> Int { scheduleToken += 1; return scheduleToken }
+    private func invalidateSchedule() { scheduleToken += 1 }
 
     // MARK: - Playback controls
     func play() {
         guard audioFile != nil else { return }
-        if !engine.isRunning {
-            try? engine.start()
-        }
+        if !engine.isRunning { try? engine.start() }
         playerNode.play()
         isPlaying = true
         startProgressTimer()
@@ -191,7 +276,6 @@ final class MusicPlayer {
 
     func seek(to time: TimeInterval) {
         guard audioFile != nil else { return }
-
         let wasPlaying = isPlaying
         let clampedTime = min(max(0, time), duration)
         invalidateSchedule()
@@ -202,22 +286,19 @@ final class MusicPlayer {
         let remainingFrames = AVAudioFrameCount(AVAudioFramePosition(frameCount) - safeFrame)
 
         guard remainingFrames > 0 else {
+            currentSeekOffset = duration
             currentTime = duration
             isPlaying = false
-            currentSeekOffset = duration
             stopProgressTimer()
             updateNowPlayingInfo()
             return
         }
 
         scheduleSegment(startingFrame: safeFrame, frameCount: remainingFrames)
-
         currentSeekOffset = Double(safeFrame) / sampleRate
         currentTime = currentSeekOffset
 
-        if wasPlaying {
-            playerNode.play()
-        }
+        if wasPlaying { playerNode.play() }
         updateNowPlayingInfo()
     }
 
@@ -238,16 +319,21 @@ final class MusicPlayer {
         guard isPlaying,
               let nodeTime = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
-        
         let elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
         currentTime = min(currentSeekOffset + elapsed, duration)
     }
 
-    // MARK: - Finished
     private func handlePlaybackFinished() {
         isPlaying = false
         currentTime = duration
         stopProgressTimer()
+        // auto-advance queue if there's more to play
+        if repeatMode == .one {
+            seek(to: 0)
+            play()
+        } else {
+            skipNext()
+        }
     }
 
     // MARK: - Now Playing
@@ -264,22 +350,18 @@ final class MusicPlayer {
 
     // MARK: - Remote controls
     private func setupRemoteTransportControls() {
-        let commandCenter = MPRemoteCommandCenter.shared()
+        let cmd = MPRemoteCommandCenter.shared()
 
-        commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.play()
-            return .success
-        }
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.pause()
-            return .success
-        }
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+        cmd.playCommand.addTarget { [weak self] _ in self?.play(); return .success }
+        cmd.pauseCommand.addTarget { [weak self] _ in self?.pause(); return .success }
+        cmd.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self else { return .commandFailed }
-            self.isPlaying ? self.pause() : self.play()
+            isPlaying ? pause() : play()
             return .success
         }
-        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+        cmd.nextTrackCommand.addTarget { [weak self] _ in self?.skipNext(); return .success }
+        cmd.previousTrackCommand.addTarget { [weak self] _ in self?.skipPrevious(); return .success }
+        cmd.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             self?.seek(to: e.positionTime)
             return .success
@@ -290,16 +372,13 @@ final class MusicPlayer {
     private func observeInterruptions() {
         NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
-            object: nil,
-            queue: .main
+            object: nil, queue: .main
         ) { [weak self] notification in
             guard let info = notification.userInfo,
                   let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-
             switch type {
-            case .began:
-                self?.pause()
+            case .began: self?.pause()
             case .ended:
                 if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt,
                    AVAudioSession.InterruptionOptions(rawValue: optionsValue).contains(.shouldResume) {
@@ -314,19 +393,12 @@ final class MusicPlayer {
     private func observeRouteChanges() {
         NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification,
-            object: nil,
-            queue: .main
+            object: nil, queue: .main
         ) { [weak self] notification in
             guard let info = notification.userInfo,
                   let reasonValue = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
                   let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
-
-            // pause when headphones are removed
-            if reason == .oldDeviceUnavailable {
-                self?.pause()
-            }
+            if reason == .oldDeviceUnavailable { self?.pause() }
         }
     }
 }
-
-// MARK: - AVMetadata helpers
