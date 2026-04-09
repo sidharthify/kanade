@@ -8,7 +8,7 @@
 import Foundation
 import GRDB
 
-/// Manages the GRDB SQLite database for kanade
+/// manage grdb sqlite database for kanade
 final class DatabaseManager {
 
     static let shared = DatabaseManager()
@@ -18,7 +18,7 @@ final class DatabaseManager {
 
     private init() {
         do {
-            // Store the database in Application Support
+            // store the database in app support
             let supportDir = try FileManager.default.url(
                 for: .applicationSupportDirectory,
                 in: .userDomainMask,
@@ -43,9 +43,10 @@ final class DatabaseManager {
     private func migrate() throws {
         var migrator = DatabaseMigrator()
 
+        // initial schema, might change
         migrator.registerMigration("v1_initial") { db in
             try db.create(table: "track", ifNotExists: true) { t in
-                t.primaryKey("id", .text)          // uuid string
+                t.primaryKey("id", .text)
                 t.column("title", .text).notNull()
                 t.column("artist", .text)
                 t.column("album", .text)
@@ -56,6 +57,30 @@ final class DatabaseManager {
             }
         }
 
+        // update schema to store relative filenames instead of absolute URLs, and drop artwork blobs.
+        migrator.registerMigration("v2_sanitise_track") { db in
+            try db.alter(table: "track") { t in
+                t.add(column: "filename", .text)
+                t.add(column: "hasArtwork", .boolean).defaults(to: false)
+                t.drop(column: "fileURL")
+                t.drop(column: "artworkData")
+            }
+        }
+
         try migrator.migrate(dbQueue)
+    }
+    
+    // MARK: - CRUD
+    
+    func insert(_ track: TrackRecord) throws {
+        try dbQueue.write { db in
+            try track.insert(db)
+        }
+    }
+    
+    func fetchAllTracks() throws -> [TrackRecord] {
+        try dbQueue.read { db in
+            try TrackRecord.order(Column("addedAt").desc).fetchAll(db)
+        }
     }
 }

@@ -10,14 +10,14 @@ import AVFoundation
 
 // MARK: - Document picker wrapper
 struct AudioFilePicker: UIViewControllerRepresentable {
-    var onPick: (URL) -> Void
+    var onPick: ([URL]) -> Void
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let types: [UTType] = [.audio, .mp3, UTType("public.aiff-audio"), UTType("com.apple.m4a-audio")]
-            .compactMap { $0 }
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        // Allow folders and audio files
+        let types: [UTType] = [.folder, .audio]
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: false)
         picker.delegate = context.coordinator
-        picker.allowsMultipleSelection = false
+        picker.allowsMultipleSelection = true
         return picker
     }
 
@@ -26,20 +26,129 @@ struct AudioFilePicker: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
 
     final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let onPick: (URL) -> Void
-        init(onPick: @escaping (URL) -> Void) { self.onPick = onPick }
+        let onPick: ([URL]) -> Void
+        init(onPick: @escaping ([URL]) -> Void) { self.onPick = onPick }
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let url = urls.first else { return }
-            onPick(url)
+            onPick(urls)
         }
     }
 }
 
-// MARK: - Content view (Stage 1 proof-of-concept)
+// MARK: - Root View
 struct ContentView: View {
     @Environment(MusicPlayer.self) private var player
+    @State private var importer = LibraryImporter()
+    
+    var body: some View {
+        TabView {
+            LibraryView(importer: importer)
+                .tabItem {
+                    Label("Library", systemImage: "music.note.list")
+                }
+            
+            PlayerView()
+                .tabItem {
+                    Label("Now Playing", systemImage: "play.circle.fill")
+                }
+        }
+        .tint(.white)
+        // force dark mode because light mode hurts
+        .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: - Library Tab
+struct LibraryView: View {
+    @Environment(MusicPlayer.self) private var player
+    @Bindable var importer: LibraryImporter
+    
+    @State private var tracks: [TrackRecord] = []
     @State private var showPicker = false
+    
+    var body: some View {
+        NavigationStack {
+            List(tracks) { track in
+                Button {
+                    play(track: track)
+                } label: {
+                    HStack {
+                        // Artwork placeholder
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(width: 48, height: 48)
+                            .cornerRadius(8)
+                            .overlay {
+                                Image(systemName: "music.note")
+                                    .foregroundStyle(.white.opacity(0.5))
+                            }
+                            
+                        VStack(alignment: .leading) {
+                            Text(track.title)
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                            if let artist = track.artist {
+                                Text(artist)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.gray)
+                            }
+                        }
+                    }
+                }
+                .listRowBackground(Color.black)
+            }
+            .listStyle(.plain)
+            .background(Color.black)
+            .navigationTitle("Library")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showPicker = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+        }
+        .onAppear { loadTracks() }
+        .sheet(isPresented: $showPicker) {
+            AudioFilePicker { urls in
+                Task {
+                    await importer.importFiles(from: urls)
+                    loadTracks()
+                }
+            }
+        }
+        .overlay {
+            if importer.isImporting {
+                VStack {
+                    ProgressView("Importing... \(importer.importedCount) / \(importer.totalCount)")
+                        .padding()
+                        .background(.thickMaterial)
+                        .cornerRadius(12)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black.opacity(0.4))
+            }
+        }
+    }
+    
+    private func loadTracks() {
+        tracks = (try? DatabaseManager.shared.fetchAllTracks()) ?? []
+    }
+    
+    private func play(track: TrackRecord) {
+        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let absoluteURL = docsDir.appendingPathComponent(track.filename)
+        player.load(url: absoluteURL)
+        player.play()
+    }
+}
+
+// MARK: - Player Tab
+struct PlayerView: View {
+    @Environment(MusicPlayer.self) private var player
     @State private var isSeeking = false
     @State private var seekValue: Double = 0
 
@@ -48,14 +157,6 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 32) {
-
-                // Title
-                Text("kanade")
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-
                 Spacer()
 
                 // Track info
@@ -111,7 +212,7 @@ struct ContentView: View {
                             .font(.title)
                             .foregroundStyle(.white)
                     }
-
+                    
                     Button {
                         player.isPlaying ? player.pause() : player.play()
                     } label: {
@@ -130,25 +231,6 @@ struct ContentView: View {
                 }
 
                 Spacer()
-
-                // Load track
-                Button {
-                    showPicker = true
-                } label: {
-                    Label("Load track", systemImage: "folder")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                        .background(.white, in: Capsule())
-                }
-                .padding(.bottom, 24)
-            }
-        }
-        .sheet(isPresented: $showPicker) {
-            AudioFilePicker { url in
-                player.load(url: url)
-                player.play()
             }
         }
     }
@@ -159,10 +241,5 @@ struct ContentView: View {
         let m = total / 60
         let s = total % 60
         return String(format: "%d:%02d", m, s)
-    }
-}
-
-#Preview {
-    ContentView()
-        .environment(MusicPlayer())
+    } // format time
 }

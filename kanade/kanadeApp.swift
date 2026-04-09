@@ -12,7 +12,6 @@ struct kanadeApp: App {
     @State private var player = MusicPlayer()
 
     init() {
-        // Touch DatabaseManager so the DB is created/migrated at launch
         _ = DatabaseManager.shared
     }
 

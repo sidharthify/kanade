@@ -24,12 +24,12 @@ final class MusicPlayer {
     private let playerNode = AVAudioPlayerNode()
     private let mixerNode = AVAudioMixerNode()
 
-    // Used to track file scheduling
+    // file scheduling
     private var audioFile: AVAudioFile?
     private var sampleRate: Double = 44100
     private var frameCount: AVAudioFrameCount = 0
 
-    // Timer for currentTime updates
+    // currentTime updates
     private var progressTimer: Timer?
 
     // MARK: - Init
