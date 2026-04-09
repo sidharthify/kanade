@@ -141,7 +141,7 @@ struct LibraryView: View {
                 }
             }
         }
-        .confirmationDialog("Library Options", isPresented: $showClearDialog, titleVisibility: .visible) {
+        .alert("Remove Imported Files?", isPresented: $showClearDialog) {
             Button("Remove Imported Files", role: .destructive) {
                 Task {
                     await importer.clearLibrary()
@@ -149,6 +149,7 @@ struct LibraryView: View {
                     reload()
                 }
             }
+            Button("Cancel", role: .cancel) {}
         } message: {
             Text("This deletes imported audio and artwork from the app and clears the library.")
         }
