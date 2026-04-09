@@ -184,6 +184,13 @@ struct LibraryView: View {
                 } label: {
                     TrackRow(track: track)
                 }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        removeTrack(track)
+                    } label: {
+                        Text("Remove from Library")
+                    }
+                }
                 .listRowBackground(Color.black)
             }
             .listStyle(.plain)
@@ -196,6 +203,13 @@ struct LibraryView: View {
                 } label: {
                     AlbumRow(album: album)
                 }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        removeAlbum(album)
+                    } label: {
+                        Text("Remove from Library")
+                    }
+                }
                 .listRowBackground(Color.black)
             }
             .listStyle(.plain)
@@ -207,6 +221,13 @@ struct LibraryView: View {
                     ArtistDetailView(artist: artist)
                 } label: {
                     ArtistRow(artist: artist)
+                }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        removeArtist(artist)
+                    } label: {
+                        Text("Remove from Library")
+                    }
                 }
                 .listRowBackground(Color.black)
             }
@@ -269,6 +290,36 @@ struct LibraryView: View {
         )
         player.play()
     }
+
+    private func removeTrack(_ track: TrackRecord) {
+        do {
+            try DatabaseManager.shared.deleteTrack(id: track.id)
+            if player.currentTrackId == track.id {
+                player.stop()
+            }
+            reload()
+        } catch {
+            print("[LibraryView] Failed to remove track: \(error)")
+        }
+    }
+
+    private func removeAlbum(_ album: AlbumSummary) {
+        do {
+            try DatabaseManager.shared.deleteAlbum(id: album.id)
+            reload()
+        } catch {
+            print("[LibraryView] Failed to remove album: \(error)")
+        }
+    }
+
+    private func removeArtist(_ artist: ArtistSummary) {
+        do {
+            try DatabaseManager.shared.deleteArtist(id: artist.id)
+            reload()
+        } catch {
+            print("[LibraryView] Failed to remove artist: \(error)")
+        }
+    }
 }
 
 // MARK: - Album detail
@@ -283,6 +334,13 @@ struct AlbumDetailView: View {
                 play(track: track)
             } label: {
                 TrackRow(track: track)
+            }
+            .contextMenu {
+                Button(role: .destructive) {
+                    remove(track)
+                } label: {
+                    Text("Remove from Library")
+                }
             }
             .listRowBackground(Color.black)
         }
@@ -311,6 +369,18 @@ struct AlbumDetailView: View {
         )
         player.play()
     }
+
+    private func remove(_ track: TrackRecord) {
+        do {
+            try DatabaseManager.shared.deleteTrack(id: track.id)
+            if player.currentTrackId == track.id {
+                player.stop()
+            }
+            load()
+        } catch {
+            print("[AlbumDetailView] Failed to remove track: \(error)")
+        }
+    }
 }
 
 // MARK: - Artist detail
@@ -325,6 +395,13 @@ struct ArtistDetailView: View {
                 play(track: track)
             } label: {
                 TrackRow(track: track)
+            }
+            .contextMenu {
+                Button(role: .destructive) {
+                    remove(track)
+                } label: {
+                    Text("Remove from Library")
+                }
             }
             .listRowBackground(Color.black)
         }
@@ -352,6 +429,18 @@ struct ArtistDetailView: View {
             hasArtwork: track.hasArtwork
         )
         player.play()
+    }
+
+    private func remove(_ track: TrackRecord) {
+        do {
+            try DatabaseManager.shared.deleteTrack(id: track.id)
+            if player.currentTrackId == track.id {
+                player.stop()
+            }
+            load()
+        } catch {
+            print("[ArtistDetailView] Failed to remove track: \(error)")
+        }
     }
 }
 

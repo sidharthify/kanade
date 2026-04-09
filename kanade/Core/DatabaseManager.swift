@@ -217,6 +217,30 @@ final class DatabaseManager {
         }
     }
 
+    func deleteTrack(id: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM track WHERE id = ?", arguments: [id])
+            try pruneEmptyAlbumsAndArtists(in: db)
+        }
+    }
+
+    func deleteAlbum(id: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM track WHERE albumId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM album WHERE id = ?", arguments: [id])
+            try pruneEmptyAlbumsAndArtists(in: db)
+        }
+    }
+
+    func deleteArtist(id: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM track WHERE artistId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM album WHERE artistId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM artist WHERE id = ?", arguments: [id])
+            try pruneEmptyAlbumsAndArtists(in: db)
+        }
+    }
+
     func fetchAllTracks() throws -> [TrackRecord] {
         try fetchTracks(search: nil, sort: .recent)
     }
@@ -353,6 +377,15 @@ final class DatabaseManager {
 
     private static func normalizeKey(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func pruneEmptyAlbumsAndArtists(in db: Database) throws {
+        try db.execute(
+            sql: "DELETE FROM album WHERE id NOT IN (SELECT DISTINCT albumId FROM track WHERE albumId IS NOT NULL)"
+        )
+        try db.execute(
+            sql: "DELETE FROM artist WHERE id NOT IN (SELECT DISTINCT artistId FROM track WHERE artistId IS NOT NULL)"
+        )
     }
 }
 
