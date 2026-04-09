@@ -1,0 +1,281 @@
+//
+//  MusicPlayer.swift
+//  kanade
+//
+//  Copyright © 2026 sidharthify.
+//
+
+import AVFoundation
+import Observation
+import MediaPlayer
+
+@Observable
+final class MusicPlayer {
+
+    // MARK: - Values
+    var isPlaying: Bool = false
+    var currentTime: TimeInterval = 0
+    var duration: TimeInterval = 0
+    var currentURL: URL? = nil
+    var currentTitle: String = "No track loaded"
+    var currentArtist: String? = nil
+
+    private let engine = AVAudioEngine()
+    private let playerNode = AVAudioPlayerNode()
+    private let mixerNode = AVAudioMixerNode()
+
+    // Used to track file scheduling
+    private var audioFile: AVAudioFile?
+    private var sampleRate: Double = 44100
+    private var frameCount: AVAudioFrameCount = 0
+
+    // Timer for currentTime updates
+    private var progressTimer: Timer?
+
+    // MARK: - Init
+    init() {
+        setupAudioSession()
+        setupEngine()
+        setupRemoteTransportControls()
+        observeInterruptions()
+        observeRouteChanges()
+    }
+
+    // MARK: - Session
+    private func setupAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+        } catch {
+            print("[MusicPlayer] AudioSession error: \(error)")
+        }
+    }
+
+    // MARK: - Engine graph
+    private func setupEngine() {
+        engine.attach(playerNode)
+        engine.attach(mixerNode)
+
+        engine.connect(playerNode, to: mixerNode, format: nil)
+        engine.connect(mixerNode, to: engine.mainMixerNode, format: nil)
+
+        do {
+            try engine.start()
+        } catch {
+            print("[MusicPlayer] Engine start error: \(error)")
+        }
+    }
+
+    // MARK: - Load
+    func load(url: URL) {
+        stop()
+        currentURL = url
+
+        do {
+            let file = try AVAudioFile(forReading: url)
+            audioFile = file
+
+            sampleRate = file.processingFormat.sampleRate
+            frameCount = AVAudioFrameCount(file.length)
+            duration = Double(frameCount) / sampleRate
+
+            // extract metadata
+            let asset = AVURLAsset(url: url)
+            Task {
+                let metadata = try? await asset.load(.commonMetadata)
+                await MainActor.run {
+                    self.currentTitle = metadata?.title ?? url.deletingPathExtension().lastPathComponent
+                    self.currentArtist = metadata?.artist
+                }
+            }
+
+            scheduleFile()
+            updateNowPlayingInfo()
+        } catch {
+            print("[MusicPlayer] Load error: \(error)")
+        }
+    }
+
+    private func scheduleFile() {
+        guard let file = audioFile else { return }
+        playerNode.scheduleFile(file, at: nil) { [weak self] in
+            DispatchQueue.main.async {
+                self?.handlePlaybackFinished()
+            }
+        }
+    }
+
+    // MARK: - Playback controls
+    func play() {
+        guard audioFile != nil else { return }
+        if !engine.isRunning {
+            try? engine.start()
+        }
+        playerNode.play()
+        isPlaying = true
+        startProgressTimer()
+        updateNowPlayingInfo()
+    }
+
+    func pause() {
+        playerNode.pause()
+        isPlaying = false
+        stopProgressTimer()
+        updateNowPlayingInfo()
+    }
+
+    func stop() {
+        playerNode.stop()
+        isPlaying = false
+        currentTime = 0
+        stopProgressTimer()
+    }
+
+    func seek(to time: TimeInterval) {
+        guard let file = audioFile else { return }
+
+        let wasPlaying = isPlaying
+        playerNode.stop()
+
+        let seekFrame = AVAudioFramePosition(time * sampleRate)
+        let safeFrame = max(0, min(seekFrame, AVAudioFramePosition(frameCount)))
+        let remainingFrames = AVAudioFrameCount(AVAudioFramePosition(frameCount) - safeFrame)
+
+        guard remainingFrames > 0 else {
+            currentTime = duration
+            isPlaying = false
+            return
+        }
+
+        playerNode.scheduleSegment(file,
+                                   startingFrame: safeFrame,
+                                   frameCount: remainingFrames,
+                                   at: nil) { [weak self] in
+            DispatchQueue.main.async {
+                self?.handlePlaybackFinished()
+            }
+        }
+        currentTime = time
+
+        if wasPlaying {
+            playerNode.play()
+        }
+        updateNowPlayingInfo()
+    }
+
+    // MARK: - Progress timer
+    private func startProgressTimer() {
+        stopProgressTimer()
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.updateCurrentTime()
+        }
+    }
+
+    private func stopProgressTimer() {
+        progressTimer?.invalidate()
+        progressTimer = nil
+    }
+
+    private func updateCurrentTime() {
+        guard let nodeTime = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
+        let seekTime = self.currentTime  // time we seeked to last
+        let elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
+        currentTime = min(seekTime + elapsed, duration)
+    }
+
+    // MARK: - Finished
+    private func handlePlaybackFinished() {
+        isPlaying = false
+        currentTime = duration
+        stopProgressTimer()
+    }
+
+    // MARK: - Now Playing
+    private func updateNowPlayingInfo() {
+        var info = [String: Any]()
+        info[MPMediaItemPropertyTitle] = currentTitle
+        info[MPMediaItemPropertyArtist] = currentArtist ?? ""
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+        info[MPMediaItemPropertyPlaybackDuration] = duration
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    // MARK: - Remote controls
+    private func setupRemoteTransportControls() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.play()
+            return .success
+        }
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.pause()
+            return .success
+        }
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            self.isPlaying ? self.pause() : self.play()
+            return .success
+        }
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            self?.seek(to: e.positionTime)
+            return .success
+        }
+    }
+
+    // MARK: - Interruptions
+    private func observeInterruptions() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let info = notification.userInfo,
+                  let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+            switch type {
+            case .began:
+                self?.pause()
+            case .ended:
+                if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt,
+                   AVAudioSession.InterruptionOptions(rawValue: optionsValue).contains(.shouldResume) {
+                    self?.play()
+                }
+            @unknown default: break
+            }
+        }
+    }
+
+    // MARK: - Route changes
+    private func observeRouteChanges() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let info = notification.userInfo,
+                  let reasonValue = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
+
+            // pause when headphones are removed
+            if reason == .oldDeviceUnavailable {
+                self?.pause()
+            }
+        }
+    }
+}
+
+// MARK: - AVMetadata helpers
+private extension Array where Element == AVMetadataItem {
+    var title: String? { value(forKey: .commonKeyTitle) }
+    var artist: String? { value(forKey: .commonKeyArtist) }
+
+    private func value(forKey key: AVMetadataKey) -> String? {
+        first(where: { $0.commonKey == key })?.stringValue
+    }
+}
