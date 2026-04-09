@@ -16,7 +16,7 @@ struct AssetMetadata {
 }
 
 enum MetadataExtractor {
-    static func extract(from asset: AVURLAsset) async -> AssetMetadata {
+    static func extract(from asset: AVURLAsset, fileURL: URL? = nil) async -> AssetMetadata {
         let common = (try? await asset.load(.commonMetadata)) ?? []
         let metadata = (try? await asset.load(.metadata)) ?? []
         let items = common + metadata
@@ -33,10 +33,15 @@ enum MetadataExtractor {
             commonKey: .commonKeyAlbumName,
             keyStrings: ["album"]
         )
-        let artwork = await items.firstData(
+        // prefer AVFoundation metadata, then fall back to raw FLAC parsing.
+        var artwork = await items.firstData(
             commonKey: .commonKeyArtwork,
             keyStrings: ["metadata_block_picture", "coverart", "cover", "picture", "artwork"]
         )
+
+        if artwork == nil, let url = fileURL {
+            artwork = ArtworkExtractor.flacArtwork(from: url)
+        }
 
         return AssetMetadata(
             title: title,
@@ -105,7 +110,7 @@ private enum ArtworkExtractor {
         if isJPEG(data) || isPNG(data) {
             return data
         }
-        if let extracted = parseFlacPictureBlock(data) {
+        if let extracted = extractFromFlacPictureBlock(data) {
             if isJPEG(extracted) || isPNG(extracted) {
                 return extracted
             }
@@ -114,7 +119,8 @@ private enum ArtworkExtractor {
         return nil
     }
 
-    private static func parseFlacPictureBlock(_ data: Data) -> Data? {
+    // decode a FLAC PICTURE block payload (not the full FLAC file).
+    static func extractFromFlacPictureBlock(_ data: Data) -> Data? {
         var cursor = 0
 
         func readUInt32() -> UInt32? {
@@ -148,6 +154,56 @@ private enum ArtworkExtractor {
         }
 
         return imageData
+    }
+
+    // parse FLAC metadata blocks to find and extract a PICTURE block.
+    static func flacArtwork(from url: URL) -> Data? {
+        guard url.pathExtension.lowercased() == "flac" else { return nil }
+
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+
+            guard let signature = try readExactly(from: handle, count: 4),
+                  signature == Data([0x66, 0x4C, 0x61, 0x43]) else {
+                return nil
+            }
+
+            while true {
+                guard let header = try readExactly(from: handle, count: 4) else { return nil }
+                let first = header[0]
+                let isLast = (first & 0x80) != 0
+                let type = Int(first & 0x7F)
+                let length = (Int(header[1]) << 16) | (Int(header[2]) << 8) | Int(header[3])
+
+                guard let blockData = try readExactly(from: handle, count: length) else { return nil }
+                // type 6 = PICTURE metadata block.
+                if type == 6, let imageData = extractFromFlacPictureBlock(blockData) {
+                    return imageData
+                }
+
+                if isLast { break }
+            }
+        } catch {
+            print("[MetadataExtractor] Failed to read FLAC artwork: \(error)")
+        }
+
+        return nil
+    }
+
+    // read a fixed number of bytes from the file handle.
+    private static func readExactly(from handle: FileHandle, count: Int) throws -> Data? {
+        var data = Data()
+        var remaining = count
+
+        while remaining > 0 {
+            let chunk = try handle.read(upToCount: remaining) ?? Data()
+            if chunk.isEmpty { return nil }
+            data.append(chunk)
+            remaining -= chunk.count
+        }
+
+        return data
     }
 
     private static func isJPEG(_ data: Data) -> Bool {

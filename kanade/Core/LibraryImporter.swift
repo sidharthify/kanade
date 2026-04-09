@@ -77,7 +77,7 @@ final class LibraryImporter {
             
             // extract metadata via AVAsset
             let asset = AVURLAsset(url: newURL)
-            let metadata = await MetadataExtractor.extract(from: asset)
+            let metadata = await MetadataExtractor.extract(from: asset, fileURL: newURL)
             let durationSeconds = try? await asset.load(.duration).seconds
 
             let title = cleaned(metadata.title) ?? url.deletingPathExtension().lastPathComponent

@@ -112,7 +112,7 @@ final class MusicPlayer {
             } else {
                 let asset = AVURLAsset(url: url)
                 Task {
-                    let metadata = await MetadataExtractor.extract(from: asset)
+                    let metadata = await MetadataExtractor.extract(from: asset, fileURL: url)
                     await MainActor.run {
                         self.currentTitle = metadata.title ?? url.deletingPathExtension().lastPathComponent
                         self.currentArtist = metadata.artist
