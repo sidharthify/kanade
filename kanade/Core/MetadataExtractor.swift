@@ -35,7 +35,7 @@ enum MetadataExtractor {
         )
         let artwork = await items.firstData(
             commonKey: .commonKeyArtwork,
-            keyStrings: ["metadata_block_picture", "coverart", "coverartmime", "cover"]
+            keyStrings: ["metadata_block_picture", "coverart", "cover", "picture", "artwork"]
         )
 
         return AssetMetadata(
@@ -63,16 +63,21 @@ private extension Array where Element == AVMetadataItem {
 
     func firstData(commonKey: AVMetadataKey, keyStrings: [String]) async -> Data? {
         if let item = first(where: { $0.commonKey == commonKey }) {
-            return try? await item.load(.dataValue)
+            if let data = try? await item.load(.dataValue) {
+                return ArtworkExtractor.normalize(data)
+            }
         }
 
         let lowered = Set(keyStrings.map { $0.lowercased() })
-        if let item = first(where: { matches($0, in: lowered) }) {
-            if let data = try? await item.load(.dataValue) {
-                return data
+        let candidates = filter { matches($0, in: lowered) }
+        for item in candidates {
+            if let data = try? await item.load(.dataValue), let normalized = ArtworkExtractor.normalize(data) {
+                return normalized
             }
-            if let stringValue = try? await item.load(.stringValue) {
-                return Data(base64Encoded: stringValue)
+            if let stringValue = try? await item.load(.stringValue),
+               let decoded = Data(base64Encoded: stringValue),
+               let normalized = ArtworkExtractor.normalize(decoded) {
+                return normalized
             }
         }
 
@@ -92,5 +97,66 @@ private extension Array where Element == AVMetadataItem {
             return key as String
         }
         return nil
+    }
+}
+
+private enum ArtworkExtractor {
+    static func normalize(_ data: Data) -> Data? {
+        if isJPEG(data) || isPNG(data) {
+            return data
+        }
+        if let extracted = parseFlacPictureBlock(data) {
+            if isJPEG(extracted) || isPNG(extracted) {
+                return extracted
+            }
+            return extracted
+        }
+        return nil
+    }
+
+    private static func parseFlacPictureBlock(_ data: Data) -> Data? {
+        var cursor = 0
+
+        func readUInt32() -> UInt32? {
+            guard data.count >= cursor + 4 else { return nil }
+            let value = data[cursor..<(cursor + 4)].reduce(UInt32(0)) { result, byte in
+                (result << 8) | UInt32(byte)
+            }
+            cursor += 4
+            return value
+        }
+
+        func readData(length: Int) -> Data? {
+            guard length >= 0, data.count >= cursor + length else { return nil }
+            let chunk = data[cursor..<(cursor + length)]
+            cursor += length
+            return Data(chunk)
+        }
+
+        _ = readUInt32()
+        guard let mimeLength = readUInt32(),
+              let _ = readData(length: Int(mimeLength)),
+              let descriptionLength = readUInt32(),
+              let _ = readData(length: Int(descriptionLength)),
+              readUInt32() != nil,
+              readUInt32() != nil,
+              readUInt32() != nil,
+              readUInt32() != nil,
+              let dataLength = readUInt32(),
+              let imageData = readData(length: Int(dataLength)) else {
+            return nil
+        }
+
+        return imageData
+    }
+
+    private static func isJPEG(_ data: Data) -> Bool {
+        data.count >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF
+    }
+
+    private static func isPNG(_ data: Data) -> Bool {
+        let signature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        guard data.count >= signature.count else { return false }
+        return data.prefix(signature.count).elementsEqual(signature)
     }
 }
