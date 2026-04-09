@@ -31,6 +31,7 @@ final class MusicPlayer {
 
     // currentTime updates
     private var progressTimer: Timer?
+    private var currentSeekOffset: TimeInterval = 0
 
     // MARK: - Init
     init() {
@@ -68,9 +69,10 @@ final class MusicPlayer {
     }
 
     // MARK: - Load
-    func load(url: URL) {
+    func load(url: URL, title: String? = nil, artist: String? = nil) {
         stop()
         currentURL = url
+        currentSeekOffset = 0
 
         do {
             let file = try AVAudioFile(forReading: url)
@@ -80,13 +82,18 @@ final class MusicPlayer {
             frameCount = AVAudioFrameCount(file.length)
             duration = Double(frameCount) / sampleRate
 
-            // extract metadata
-            let asset = AVURLAsset(url: url)
-            Task {
-                let metadata = try? await asset.load(.commonMetadata)
-                await MainActor.run {
-                    self.currentTitle = metadata?.title ?? url.deletingPathExtension().lastPathComponent
-                    self.currentArtist = metadata?.artist
+            // Prefer database override, fallback to parsing, fallback to filename
+            if let title = title, !title.isEmpty {
+                self.currentTitle = title
+                self.currentArtist = artist
+            } else {
+                let asset = AVURLAsset(url: url)
+                Task {
+                    let metadata = try? await asset.load(.commonMetadata)
+                    await MainActor.run {
+                        self.currentTitle = metadata?.title ?? url.deletingPathExtension().lastPathComponent
+                        self.currentArtist = metadata?.artist
+                    }
                 }
             }
 
@@ -129,6 +136,7 @@ final class MusicPlayer {
         playerNode.stop()
         isPlaying = false
         currentTime = 0
+        currentSeekOffset = 0
         stopProgressTimer()
     }
 
@@ -156,6 +164,8 @@ final class MusicPlayer {
                 self?.handlePlaybackFinished()
             }
         }
+        
+        currentSeekOffset = time
         currentTime = time
 
         if wasPlaying {
@@ -178,11 +188,12 @@ final class MusicPlayer {
     }
 
     private func updateCurrentTime() {
-        guard let nodeTime = playerNode.lastRenderTime,
+        guard isPlaying,
+              let nodeTime = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
-        let seekTime = self.currentTime  // time we seeked to last
+        
         let elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
-        currentTime = min(seekTime + elapsed, duration)
+        currentTime = min(currentSeekOffset + elapsed, duration)
     }
 
     // MARK: - Finished

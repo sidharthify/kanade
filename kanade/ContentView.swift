@@ -141,7 +141,7 @@ struct LibraryView: View {
     private func play(track: TrackRecord) {
         guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let absoluteURL = docsDir.appendingPathComponent(track.filename)
-        player.load(url: absoluteURL)
+        player.load(url: absoluteURL, title: track.title, artist: track.artist)
         player.play()
     }
 }
