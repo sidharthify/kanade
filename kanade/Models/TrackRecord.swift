@@ -17,6 +17,10 @@ struct TrackRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, H
     var title: String
     var artist: String?
     var album: String?
+
+    // foreign keys
+    var artistId: String?
+    var albumId: String?
     
     // duration in seconds
     var duration: Double

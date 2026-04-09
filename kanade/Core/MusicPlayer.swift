@@ -19,6 +19,18 @@ final class MusicPlayer {
     var currentURL: URL? = nil
     var currentTitle: String = "No track loaded"
     var currentArtist: String? = nil
+    var currentAlbum: String? = nil
+    var currentTrackId: String? = nil
+    var currentHasArtwork: Bool = false
+
+    var hasTrackLoaded: Bool { currentURL != nil }
+    var currentArtworkURL: URL? {
+        guard currentHasArtwork, let trackId = currentTrackId else { return nil }
+        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        return docsDir.appendingPathComponent("Artwork").appendingPathComponent("\(trackId).jpg")
+    }
 
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
@@ -70,10 +82,20 @@ final class MusicPlayer {
     }
 
     // MARK: - Load
-    func load(url: URL, title: String? = nil, artist: String? = nil) {
+    func load(
+        url: URL,
+        trackId: String? = nil,
+        title: String? = nil,
+        artist: String? = nil,
+        album: String? = nil,
+        hasArtwork: Bool = false
+    ) {
         stop()
         currentURL = url
         currentSeekOffset = 0
+        currentTrackId = trackId
+        currentHasArtwork = hasArtwork
+        currentAlbum = album
 
         do {
             let file = try AVAudioFile(forReading: url)
@@ -94,6 +116,9 @@ final class MusicPlayer {
                     await MainActor.run {
                         self.currentTitle = metadata?.title ?? url.deletingPathExtension().lastPathComponent
                         self.currentArtist = metadata?.artist
+                        if self.currentAlbum == nil {
+                            self.currentAlbum = metadata?.album
+                        }
                     }
                 }
             }
@@ -230,6 +255,7 @@ final class MusicPlayer {
         var info = [String: Any]()
         info[MPMediaItemPropertyTitle] = currentTitle
         info[MPMediaItemPropertyArtist] = currentArtist ?? ""
+        info[MPMediaItemPropertyAlbumTitle] = currentAlbum ?? ""
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
         info[MPMediaItemPropertyPlaybackDuration] = duration
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0

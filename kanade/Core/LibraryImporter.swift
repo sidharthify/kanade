@@ -96,9 +96,9 @@ final class LibraryImporter {
             let metadata = try? await asset.load(.commonMetadata)
             let durationSeconds = try? await asset.load(.duration).seconds
             
-            let title = metadata?.title ?? url.deletingPathExtension().lastPathComponent
-            let artist = metadata?.artist
-            let album = metadata?.album
+            let title = cleaned(metadata?.title) ?? url.deletingPathExtension().lastPathComponent
+            let artist = cleaned(metadata?.artist) ?? "Unknown Artist"
+            let album = cleaned(metadata?.album) ?? "Unknown Album"
             
             var hasArtwork = false
             if let artworkData = metadata?.artworkData {
@@ -107,7 +107,7 @@ final class LibraryImporter {
                 hasArtwork = true
             }
             
-            let track = TrackRecord(
+            let payload = TrackImportPayload(
                 id: id,
                 title: title,
                 artist: artist,
@@ -117,8 +117,8 @@ final class LibraryImporter {
                 hasArtwork: hasArtwork,
                 addedAt: Date().timeIntervalSince1970
             )
-            
-            try DatabaseManager.shared.insert(track)
+
+            try DatabaseManager.shared.insertImportedTrack(payload)
             
         } catch {
             print("[LibraryImporter] Failed to process \(url.lastPathComponent): \(error)")
@@ -129,6 +129,13 @@ final class LibraryImporter {
         await MainActor.run {
             self.isImporting = false
         }
+    }
+
+    private func cleaned(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 }
 
