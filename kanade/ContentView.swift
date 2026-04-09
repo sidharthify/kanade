@@ -81,6 +81,7 @@ struct LibraryView: View {
     @State private var artists: [ArtistSummary] = []
 
     @State private var showPicker = false
+    @State private var showClearDialog = false
     @State private var searchText = ""
     @State private var section: LibrarySection = .songs
     @State private var trackSort: TrackSort = .recent
@@ -106,6 +107,16 @@ struct LibraryView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     sortMenu
+                    Menu {
+                        Button(role: .destructive) {
+                            showClearDialog = true
+                        } label: {
+                            Text("Remove Imported Files")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(.white)
+                    }
                     Button {
                         showPicker = true
                     } label: {
@@ -130,13 +141,31 @@ struct LibraryView: View {
                 }
             }
         }
+        .confirmationDialog("Library Options", isPresented: $showClearDialog, titleVisibility: .visible) {
+            Button("Remove Imported Files", role: .destructive) {
+                Task {
+                    await importer.clearLibrary()
+                    player.stop()
+                    reload()
+                }
+            }
+        } message: {
+            Text("This deletes imported audio and artwork from the app and clears the library.")
+        }
         .overlay {
-            if importer.isImporting {
+            if importer.isImporting || importer.isClearing {
                 VStack {
-                    ProgressView("Importing... \(importer.importedCount) / \(importer.totalCount)")
-                        .padding()
-                        .background(.thickMaterial)
-                        .cornerRadius(12)
+                    if importer.isClearing {
+                        ProgressView("Clearing library...")
+                            .padding()
+                            .background(.thickMaterial)
+                            .cornerRadius(12)
+                    } else {
+                        ProgressView("Importing... \(importer.importedCount) / \(importer.totalCount)")
+                            .padding()
+                            .background(.thickMaterial)
+                            .cornerRadius(12)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black.opacity(0.4))

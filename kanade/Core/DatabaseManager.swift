@@ -158,6 +158,13 @@ final class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("v4_source_hash") { db in
+            try db.alter(table: "track") { t in
+                t.add(column: "sourceHash", .text)
+            }
+            try db.create(index: "track_sourceHash_idx", on: "track", columns: ["sourceHash"])
+        }
+
         try migrator.migrate(dbQueue)
     }
     
@@ -183,10 +190,30 @@ final class DatabaseManager {
                 albumId: album.id,
                 duration: payload.duration,
                 filename: payload.filename,
+                sourceHash: payload.sourceHash,
                 hasArtwork: payload.hasArtwork,
                 addedAt: payload.addedAt
             )
             try track.insert(db)
+        }
+    }
+
+    func containsTrack(withSourceHash hash: String) throws -> Bool {
+        try dbQueue.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT 1 FROM track WHERE sourceHash = ? LIMIT 1",
+                arguments: [hash]
+            )
+            return row != nil
+        }
+    }
+
+    func clearLibrary() throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM track")
+            try db.execute(sql: "DELETE FROM album")
+            try db.execute(sql: "DELETE FROM artist")
         }
     }
 
@@ -337,6 +364,7 @@ struct TrackImportPayload {
     let album: String
     let duration: Double
     let filename: String
+    let sourceHash: String?
     let hasArtwork: Bool
     let addedAt: Double
 }

@@ -6,12 +6,14 @@
 //
 
 import AVFoundation
+import CryptoKit
 import Foundation
 import Observation
 
 @Observable
 final class LibraryImporter {
     var isImporting: Bool = false
+    var isClearing: Bool = false
     var importedCount: Int = 0
     var totalCount: Int = 0
     
@@ -59,6 +61,12 @@ final class LibraryImporter {
     
     private func processFile(_ url: URL, destinationURL: URL, artworkURL: URL) async {
         let fileManager = FileManager.default
+        let sourceHash = fileHash(for: url)
+        if let hash = sourceHash, (try? DatabaseManager.shared.containsTrack(withSourceHash: hash)) == true {
+            print("[LibraryImporter] Skipped duplicate \(url.lastPathComponent)")
+            return
+        }
+
         let id = UUID().uuidString
         let ext = url.pathExtension
         let newURL = destinationURL.appendingPathComponent("\(id).\(ext)")
@@ -90,6 +98,7 @@ final class LibraryImporter {
                 album: album,
                 duration: durationSeconds ?? 0,
                 filename: relativeFilename,
+                sourceHash: sourceHash,
                 hasArtwork: hasArtwork,
                 addedAt: Date().timeIntervalSince1970
             )
@@ -105,6 +114,42 @@ final class LibraryImporter {
         await MainActor.run {
             self.isImporting = false
         }
+    }
+
+    func clearLibrary() async {
+        await MainActor.run {
+            self.isClearing = true
+        }
+
+        let fileManager = FileManager.default
+        guard let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            await finishClear()
+            return
+        }
+
+        let libraryDir = docsDir.appendingPathComponent("Library", isDirectory: true)
+        let artworkDir = docsDir.appendingPathComponent("Artwork", isDirectory: true)
+
+        do {
+            if fileManager.fileExists(atPath: libraryDir.path) {
+                try fileManager.removeItem(at: libraryDir)
+            }
+            if fileManager.fileExists(atPath: artworkDir.path) {
+                try fileManager.removeItem(at: artworkDir)
+            }
+            try fileManager.createDirectory(at: libraryDir, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: artworkDir, withIntermediateDirectories: true)
+        } catch {
+            print("[LibraryImporter] Failed to clear library files: \(error)")
+        }
+
+        do {
+            try DatabaseManager.shared.clearLibrary()
+        } catch {
+            print("[LibraryImporter] Failed to clear database: \(error)")
+        }
+
+        await finishClear()
     }
 
     private func collectFiles(from urls: [URL], fileManager: FileManager) -> [URL] {
@@ -134,6 +179,34 @@ final class LibraryImporter {
         }
 
         return files
+    }
+
+    private func fileHash(for url: URL) -> String? {
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+
+            var hasher = SHA256()
+            while true {
+                let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
+                if data.isEmpty { break }
+                hasher.update(data: data)
+            }
+
+            let digest = hasher.finalize()
+            return digest.map { String(format: "%02x", $0) }.joined()
+        } catch {
+            print("[LibraryImporter] Failed to hash \(url.lastPathComponent): \(error)")
+            return nil
+        }
+    }
+
+    private func finishClear() async {
+        await MainActor.run {
+            self.isClearing = false
+            self.importedCount = 0
+            self.totalCount = 0
+        }
     }
 
     private func cleaned(_ value: String?) -> String? {

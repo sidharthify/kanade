@@ -28,6 +28,9 @@ struct TrackRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, H
     // store the relative filename
     // iOS seems to randomly change the sandbox UUID during updates, so absolute URLs will break.
     var filename: String
+
+    // used to prevent duplicate imports
+    var sourceHash: String?
     
     // true if artwork was successfully extracted and cached to disk.
     var hasArtwork: Bool
