@@ -27,7 +27,6 @@ final class LibraryImporter {
         }
         
         let fileManager = FileManager.default
-        var filesToProcess: [URL] = []
         
         // ensure dirs exist
         guard let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
@@ -43,32 +42,9 @@ final class LibraryImporter {
             return
         }
         
-        // scan selected urls
-        for url in urls {
-            // safely access security-scoped resources
-            let secured = url.startAccessingSecurityScopedResource()
-            
-            var isDir: ObjCBool = false
-            if fileManager.fileExists(atPath: url.path, isDirectory: &isDir) {
-                if isDir.boolValue {
-                    if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: nil) {
-                        for case let fileURL as URL in enumerator {
-                            if supportedExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                filesToProcess.append(fileURL)
-                            }
-                        }
-                    }
-                } else if supportedExtensions.contains(url.pathExtension.lowercased()) {
-                    filesToProcess.append(url)
-                }
-            }
-            
-            if secured {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-        
-        await MainActor.run { self.totalCount = filesToProcess.count }
+        let filesToProcess = collectFiles(from: urls, fileManager: fileManager)
+        let total = filesToProcess.count
+        await MainActor.run { self.totalCount = total }
         
         for file in filesToProcess {
             let secured = file.startAccessingSecurityScopedResource()
@@ -96,12 +72,13 @@ final class LibraryImporter {
             let metadata = try? await asset.load(.commonMetadata)
             let durationSeconds = try? await asset.load(.duration).seconds
             
-            let title = cleaned(metadata?.title) ?? url.deletingPathExtension().lastPathComponent
-            let artist = cleaned(metadata?.artist) ?? "Unknown Artist"
-            let album = cleaned(metadata?.album) ?? "Unknown Album"
+            let title = cleaned(await metadata?.stringValue(for: .commonKeyTitle))
+                ?? url.deletingPathExtension().lastPathComponent
+            let artist = cleaned(await metadata?.stringValue(for: .commonKeyArtist)) ?? "Unknown Artist"
+            let album = cleaned(await metadata?.stringValue(for: .commonKeyAlbumName)) ?? "Unknown Album"
             
             var hasArtwork = false
-            if let artworkData = metadata?.artworkData {
+            if let artworkData = await metadata?.artworkData() {
                 let artworkDest = artworkURL.appendingPathComponent("\(id).jpg")
                 try? artworkData.write(to: artworkDest)
                 hasArtwork = true
@@ -131,6 +108,35 @@ final class LibraryImporter {
         }
     }
 
+    private func collectFiles(from urls: [URL], fileManager: FileManager) -> [URL] {
+        var files: [URL] = []
+
+        for url in urls {
+            let secured = url.startAccessingSecurityScopedResource()
+
+            var isDir: ObjCBool = false
+            if fileManager.fileExists(atPath: url.path, isDirectory: &isDir) {
+                if isDir.boolValue {
+                    if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: nil) {
+                        for case let fileURL as URL in enumerator {
+                            if supportedExtensions.contains(fileURL.pathExtension.lowercased()) {
+                                files.append(fileURL)
+                            }
+                        }
+                    }
+                } else if supportedExtensions.contains(url.pathExtension.lowercased()) {
+                    files.append(url)
+                }
+            }
+
+            if secured {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        return files
+    }
+
     private func cleaned(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
             return nil
@@ -141,14 +147,13 @@ final class LibraryImporter {
 
 // helper functions for parsing common metadata out of AVAsset, might change
 private extension Array where Element == AVMetadataItem {
-    var title: String? { stringValue(for: .commonKeyTitle) }
-    var artist: String? { stringValue(for: .commonKeyArtist) }
-    var album: String? { stringValue(for: .commonKeyAlbumName) }
-    var artworkData: Data? {
-        first(where: { $0.commonKey == .commonKeyArtwork })?.dataValue
+    func stringValue(for key: AVMetadataKey) async -> String? {
+        guard let item = first(where: { $0.commonKey == key }) else { return nil }
+        return try? await item.load(.stringValue)
     }
-    
-    private func stringValue(for key: AVMetadataKey) -> String? {
-        first(where: { $0.commonKey == key })?.stringValue
+
+    func artworkData() async -> Data? {
+        guard let item = first(where: { $0.commonKey == .commonKeyArtwork }) else { return nil }
+        return try? await item.load(.dataValue)
     }
 }

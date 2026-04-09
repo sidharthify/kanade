@@ -9,7 +9,7 @@ import Foundation
 import GRDB
 
 // compact album row for UI lists.
-struct AlbumSummary: Codable, FetchableRecord, Decodable, Identifiable, Hashable {
+struct AlbumSummary: Codable, FetchableRecord, Identifiable, Hashable {
     var id: String
     var name: String
     var artistName: String?
@@ -18,7 +18,7 @@ struct AlbumSummary: Codable, FetchableRecord, Decodable, Identifiable, Hashable
 }
 
 // compact artist row for UI lists.
-struct ArtistSummary: Codable, FetchableRecord, Decodable, Identifiable, Hashable {
+struct ArtistSummary: Codable, FetchableRecord, Identifiable, Hashable {
     var id: String
     var name: String
     var trackCount: Int

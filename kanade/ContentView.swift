@@ -115,11 +115,11 @@ struct LibraryView: View {
             .searchable(text: $searchText, prompt: "Search Library")
         }
         .onAppear { reload() }
-        .onChange(of: searchText) { _ in reload() }
-        .onChange(of: section) { _ in reload() }
-        .onChange(of: trackSort) { _ in reload() }
-        .onChange(of: albumSort) { _ in reload() }
-        .onChange(of: artistSort) { _ in reload() }
+        .onChange(of: searchText) { reload() }
+        .onChange(of: section) { reload() }
+        .onChange(of: trackSort) { reload() }
+        .onChange(of: albumSort) { reload() }
+        .onChange(of: artistSort) { reload() }
         .sheet(isPresented: $showPicker) {
             AudioFilePicker { urls in
                 Task {
