@@ -50,13 +50,15 @@ struct ContentView: View {
     @State private var importer = LibraryImporter()
     @State private var showPlayer = false
 
+    private var miniPlayerBottomPadding: CGFloat { 52 }
+
     var body: some View {
         LibraryView(importer: importer)
             .safeAreaInset(edge: .bottom) {
                 if player.hasTrackLoaded {
                     MiniPlayerView(showPlayer: $showPlayer)
                         .padding(.horizontal)
-                        .padding(.bottom, 8)
+                        .padding(.bottom, miniPlayerBottomPadding)
                 }
             }
             .sheet(isPresented: $showPlayer) {

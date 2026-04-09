@@ -112,15 +112,12 @@ final class MusicPlayer {
             } else {
                 let asset = AVURLAsset(url: url)
                 Task {
-                    let metadata = try? await asset.load(.commonMetadata)
-                    let title = await metadata?.stringValue(for: .commonKeyTitle)
-                    let artist = await metadata?.stringValue(for: .commonKeyArtist)
-                    let album = await metadata?.stringValue(for: .commonKeyAlbumName)
+                    let metadata = await MetadataExtractor.extract(from: asset)
                     await MainActor.run {
-                        self.currentTitle = title ?? url.deletingPathExtension().lastPathComponent
-                        self.currentArtist = artist
+                        self.currentTitle = metadata.title ?? url.deletingPathExtension().lastPathComponent
+                        self.currentArtist = metadata.artist
                         if self.currentAlbum == nil {
-                            self.currentAlbum = album
+                            self.currentAlbum = metadata.album
                         }
                     }
                 }
@@ -333,9 +330,3 @@ final class MusicPlayer {
 }
 
 // MARK: - AVMetadata helpers
-private extension Array where Element == AVMetadataItem {
-    func stringValue(for key: AVMetadataKey) async -> String? {
-        guard let item = first(where: { $0.commonKey == key }) else { return nil }
-        return try? await item.load(.stringValue)
-    }
-}

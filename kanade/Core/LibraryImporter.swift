@@ -69,16 +69,15 @@ final class LibraryImporter {
             
             // extract metadata via AVAsset
             let asset = AVURLAsset(url: newURL)
-            let metadata = try? await asset.load(.commonMetadata)
+            let metadata = await MetadataExtractor.extract(from: asset)
             let durationSeconds = try? await asset.load(.duration).seconds
-            
-            let title = cleaned(await metadata?.stringValue(for: .commonKeyTitle))
-                ?? url.deletingPathExtension().lastPathComponent
-            let artist = cleaned(await metadata?.stringValue(for: .commonKeyArtist)) ?? "Unknown Artist"
-            let album = cleaned(await metadata?.stringValue(for: .commonKeyAlbumName)) ?? "Unknown Album"
+
+            let title = cleaned(metadata.title) ?? url.deletingPathExtension().lastPathComponent
+            let artist = cleaned(metadata.artist) ?? "Unknown Artist"
+            let album = cleaned(metadata.album) ?? "Unknown Album"
             
             var hasArtwork = false
-            if let artworkData = await metadata?.artworkData() {
+            if let artworkData = metadata.artworkData {
                 let artworkDest = artworkURL.appendingPathComponent("\(id).jpg")
                 try? artworkData.write(to: artworkDest)
                 hasArtwork = true
@@ -145,15 +144,3 @@ final class LibraryImporter {
     }
 }
 
-// helper functions for parsing common metadata out of AVAsset, might change
-private extension Array where Element == AVMetadataItem {
-    func stringValue(for key: AVMetadataKey) async -> String? {
-        guard let item = first(where: { $0.commonKey == key }) else { return nil }
-        return try? await item.load(.stringValue)
-    }
-
-    func artworkData() async -> Data? {
-        guard let item = first(where: { $0.commonKey == .commonKeyArtwork }) else { return nil }
-        return try? await item.load(.dataValue)
-    }
-}
