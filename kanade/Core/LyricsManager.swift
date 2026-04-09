@@ -51,12 +51,11 @@ final class LyricsManager {
 
     // index of the active lyric line for a given playback time
     func activeIndex(at time: TimeInterval) -> Int {
-        guard !lines.isEmpty else { return 0 }
-        var idx = 0
-        for (i, line) in lines.enumerated() {
-            if line.timestamp <= time { idx = i } else { break }
+        guard !lines.isEmpty else { return -1 }
+        for (i, line) in lines.enumerated().reversed() {
+            if line.timestamp <= time { return i }
         }
-        return idx
+        return -1
     }
 
     // MARK: - Network

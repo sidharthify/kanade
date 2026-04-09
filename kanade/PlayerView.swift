@@ -82,10 +82,8 @@ struct PlayerView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showLyrics) {
-            LyricsSheetView()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        .fullScreenCover(isPresented: $showLyrics) {
+            LyricsPageView(isPresented: $showLyrics)
         }
         .confirmationDialog(
             "\(player.currentTitle) · \(formatted(player.duration)) · \(player.currentArtist ?? "") · \(player.currentAlbum ?? "")",
@@ -349,85 +347,194 @@ struct PlayerView: View {
     }
 }
 
-// MARK: - Synced lyrics scroll
+// MARK: - Full lyrics page
 
-struct LyricsScrollView: View {
+struct LyricsPageView: View {
     @Environment(MusicPlayer.self) private var player
-    @State private var lyrics = LyricsManager.shared
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { i, line in
-                        Text(line.text)
-                            .font(i == activeIndex ? .title3.weight(.semibold) : .body)
-                            .foregroundStyle(i == activeIndex ? .white : .white.opacity(0.35))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(i)
-                            .animation(.easeInOut(duration: 0.2), value: activeIndex)
-                    }
-                }
-                .padding(.vertical, 16)
-            }
-            .frame(minHeight: 200)
-            .onChange(of: activeIndex) { _, idx in
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    proxy.scrollTo(max(0, idx - 2), anchor: .top)
-                }
-            }
-        }
-    }
-
-    private var activeIndex: Int { lyrics.activeIndex(at: player.currentTime) }
-}
-
-// MARK: - Lyrics sheet
-
-struct LyricsSheetView: View {
-    @Environment(MusicPlayer.self) private var player
+    @Environment(\.dismiss) private var dismiss
+    @Binding var isPresented: Bool
     @State private var lyrics = LyricsManager.shared
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                content
+            Group {
+                if lyrics.isLoading {
+                    loadingState
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if lyrics.lines.isEmpty {
+                    emptyState
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    lyricsScroller
+                }
             }
-            .navigationTitle("Lyrics")
-            .navigationBarTitleDisplayMode(.inline)
+            .background {
+                lyricsBackground
+                    .ignoresSafeArea()
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { closeLyrics() } label: {
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.bold))
+                    }
+                }
+
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 0) {
+                        Text(player.currentTitle)
+                            .font(.headline.weight(.semibold))
+                            .lineLimit(1)
+                        Text(player.currentArtist ?? "Unknown Artist")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.72))
+                            .lineLimit(1)
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { closeLyrics() }
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if lyrics.isLoading {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Fetching lyrics...")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-        } else if lyrics.lines.isEmpty {
-            VStack(spacing: 8) {
-                Image(systemName: "text.quote")
-                    .font(.title2)
-                    .foregroundStyle(.white.opacity(0.6))
-                Text("No lyrics found")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                Text(player.currentTitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.6))
-            }
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 32)
-        } else {
-            LyricsScrollView()
-                .padding(.horizontal, 24)
-                .padding(.bottom, 24)
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Fetching lyrics...")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.8))
         }
+        .padding(.bottom, 120)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "text.quote")
+                .font(.system(size: 28))
+                .foregroundStyle(.white.opacity(0.7))
+            Text("No synced lyrics found")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+            Text(player.currentTitle)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.75))
+        }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 28)
+        .padding(.bottom, 120)
+    }
+
+    private var lyricsScroller: some View {
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 32) {
+                    Color.clear.frame(height: 32)
+
+                    ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { i, line in
+                        Button {
+                            player.seek(to: line.timestamp)
+                        } label: {
+                            lyricRow(line, index: i)
+                        }
+                        .buttonStyle(.plain)
+                        .id(i)
+                    }
+
+                    Color.clear.frame(height: 400)
+                }
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onAppear {
+                scrollToActive(proxy, animated: false)
+            }
+            .onChange(of: activeIndex) { _, _ in
+                scrollToActive(proxy, animated: true)
+            }
+        }
+    }
+
+    private func lyricRow(_ line: LyricLine, index: Int) -> some View {
+        let isCurrent = index == activeIndex
+        let isPassed = activeIndex >= 0 && index < activeIndex
+        let distance = activeIndex >= 0 ? max(0, index - activeIndex) : index + 1
+        let blurRadius = distance > 0 ? min(3.0, Double(distance) * 0.5) : 0.0
+        let textOpacity = distance > 0 ? max(0.2, 1.0 - Double(distance) * 0.15) : 1.0
+
+        return HStack(alignment: .top) {
+            Text(line.text)
+                .font(.system(size: isCurrent ? 28 : 24, weight: isCurrent ? .bold : .semibold, design: .rounded))
+                .foregroundStyle(isCurrent ? Color.white : Color.white.opacity(isPassed ? 0.5 : 0.8))
+                .blur(radius: blurRadius)
+                .opacity(textOpacity)
+                .multilineTextAlignment(.leading)
+                .lineSpacing(2)
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: activeIndex)
+    }
+
+    private func scrollToActive(_ proxy: ScrollViewProxy, animated: Bool) {
+        guard activeIndex >= 0 else { return }
+        let target = max(0, activeIndex - 1)
+
+        if animated {
+            withAnimation(.easeInOut(duration: 0.45)) {
+                proxy.scrollTo(target, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(target, anchor: .center)
+        }
+    }
+
+    @ViewBuilder
+    private var lyricsBackground: some View {
+        if let image = loadArtwork() {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .blur(radius: 85, opaque: true)
+                .overlay(
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.22),
+                            Color.black.opacity(0.58),
+                            Color.black.opacity(0.9)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+        } else {
+            LinearGradient(
+                colors: [Color(white: 0.2), Color.black],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+    }
+
+    private var activeIndex: Int {
+        lyrics.activeIndex(at: player.currentTime)
+    }
+
+    private func loadArtwork() -> UIImage? {
+        guard let id = player.currentTrackId, player.currentHasArtwork,
+              let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        else { return nil }
+        return UIImage(contentsOfFile: docs.appendingPathComponent("Artwork/\(id).jpg").path)
+    }
+
+    private func closeLyrics() {
+        isPresented = false
+        dismiss()
     }
 }
 
