@@ -528,52 +528,50 @@ struct MiniPlayerView: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
 
-        VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                ArtworkImage(
-                    trackId: player.currentTrackId,
-                    hasArtwork: player.currentHasArtwork,
-                    size: artworkSize,
-                    cornerRadius: 10
-                )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(player.currentTitle)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    Text(player.currentArtist ?? "Unknown Artist")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 12)
-
-                Color.clear
-                    .frame(width: playButtonSize, height: playButtonSize)
-            }
-
-            ProgressView(value: player.currentTime, total: max(player.duration, 1))
-                .tint(.primary)
-        }
-        .padding(12)
-        .background(
-            .ultraThinMaterial,
-            in: shape
-        )
-        .overlay(shape.stroke(.quaternary, lineWidth: 0.5))
-        .overlay {
+        ZStack(alignment: .topTrailing) {
             Button {
                 showPlayer = true
             } label: {
-                Color.clear
-                    .contentShape(shape)
+                VStack(spacing: 8) {
+                    HStack(spacing: 12) {
+                        ArtworkImage(
+                            trackId: player.currentTrackId,
+                            hasArtwork: player.currentHasArtwork,
+                            size: artworkSize,
+                            cornerRadius: 10
+                        )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(player.currentTitle)
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+
+                            Text(player.currentArtist ?? "Unknown Artist")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 12)
+
+                        Color.clear
+                            .frame(width: playButtonSize, height: playButtonSize)
+                    }
+
+                    ProgressView(value: player.currentTime, total: max(player.duration, 1))
+                        .tint(.primary)
+                }
+                .padding(12)
+                .background(
+                    .ultraThinMaterial,
+                    in: shape
+                )
+                .overlay(shape.stroke(.quaternary, lineWidth: 0.5))
+                .contentShape(shape)
             }
-            .buttonStyle(.plain)
-        }
-        .overlay(alignment: .topTrailing) {
+            .buttonStyle(MiniPlayerSquishStyle())
+
             Button {
                 player.isPlaying ? player.pause() : player.play()
             } label: {
@@ -583,6 +581,7 @@ struct MiniPlayerView: View {
                     .animation(.snappy, value: player.isPlaying)
                     .foregroundStyle(.primary)
                     .frame(width: playButtonSize, height: playButtonSize)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
@@ -594,6 +593,15 @@ struct MiniPlayerView: View {
 
     private var artworkSize: CGFloat { 44 }
     private var playButtonSize: CGFloat { 32 }
+}
+
+struct MiniPlayerSquishStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(.interpolatingSpring(stiffness: 300, damping: 20), value: configuration.isPressed)
+    }
 }
 
 // MARK: - Volume slider (wraps MPVolumeView since AVAudioSession.outputVolume is read-only)
