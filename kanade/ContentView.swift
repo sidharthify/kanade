@@ -441,12 +441,12 @@ struct MiniPlayerView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(player.currentTitle)
                                 .font(.callout.weight(.semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary) 
                                 .lineLimit(1)
 
                             Text(player.currentArtist ?? "Unknown Artist")
                                 .font(.caption)
-                                .foregroundStyle(.white.opacity(0.6))
+                                .foregroundStyle(.secondary) 
                                 .lineLimit(1)
                         }
                     }
@@ -460,18 +460,24 @@ struct MiniPlayerView: View {
                 } label: {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                         .font(.title2)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)
             }
 
             ProgressView(value: player.currentTime, total: max(player.duration, 1))
-                .tint(.white)
-                .opacity(0.7)
+                .tint(.primary) 
         }
         .padding(12)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(
+            .ultraThinMaterial, 
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(.quaternary, lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
     }
 }
 
@@ -485,8 +491,6 @@ struct VolumeSlider: UIViewRepresentable {
     }
     func updateUIView(_ uiView: MPVolumeView, context: Context) {}
 }
-
-
 
 // MARK: - Rows
 struct TrackRow: View {
