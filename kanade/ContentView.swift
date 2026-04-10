@@ -73,8 +73,13 @@ struct ContentView: View {
     @State private var importer = LibraryImporter()
     @State private var showPlayer = false
 
+    @AppStorage("defaultTab") private var defaultTab = "Library"
+    @AppStorage("appTheme") private var appTheme = 0
+    @AppStorage("disableAnimations") private var disableAnimations = false
+    @State private var selectedTab = "Library"
+
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             LibraryView(
                 importer: importer,
                 title: "Library",
@@ -86,6 +91,7 @@ struct ContentView: View {
             .tabItem {
                 Label("Library", systemImage: "music.note.list")
             }
+            .tag("Library")
 
             LibraryView(
                 importer: importer,
@@ -98,49 +104,29 @@ struct ContentView: View {
             .tabItem {
                 Label("Artists", systemImage: "person.2.fill")
             }
+            .tag("Artists")
 
             SettingsView()
                 .withMiniPlayer(showPlayer: $showPlayer)
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
+            .tag("Settings")
         }
         .sheet(isPresented: $showPlayer) {
             PlayerView()
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .tint(.white)
-        .preferredColorScheme(.dark)
-    }
-}
-
-// MARK: - Settings
-struct SettingsView: View {
-    private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
-    }
-
-    private var buildNumber: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("About") {
-                    LabeledContent("Version", value: appVersion)
-                    LabeledContent("Build", value: buildNumber)
-                }
-
-                Section("Support") {
-                    Text("Thanks for listening with Kanade.")
-                        .foregroundStyle(.secondary)
-                }
+        .tint(.accentColor)
+        .preferredColorScheme(appTheme == 1 ? .light : (appTheme == 2 ? .dark : nil))
+        .transaction { transaction in
+            if disableAnimations {
+                transaction.animation = nil
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.black)
-            .navigationTitle("Settings")
+        }
+        .onAppear {
+            selectedTab = defaultTab
         }
     }
 }

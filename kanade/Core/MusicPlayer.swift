@@ -34,6 +34,9 @@ final class MusicPlayer {
     // Playback modes
     var shuffleEnabled: Bool = false
     var repeatMode: RepeatMode = .off
+    var crossfadeDuration: TimeInterval {
+        UserDefaults.standard.double(forKey: "crossfadeDuration")
+    }
 
     var hasTrackLoaded: Bool { currentURL != nil }
 
@@ -304,6 +307,8 @@ final class MusicPlayer {
         invalidateSchedule()
         playerNode.stop()
         isPlaying = false
+        isCrossfadingOut = false
+        mixerNode.outputVolume = 1.0
         currentTime = 0
         currentSeekOffset = 0
         stopProgressTimer()
@@ -360,9 +365,49 @@ final class MusicPlayer {
           guard elapsed.isFinite else { return }
           let safeDuration = duration.isFinite ? max(0, duration) : 0
           currentTime = min(max(0, currentSeekOffset + elapsed), safeDuration)
+
+          // Crossfade transition logic
+          let userCrossfade = crossfadeDuration
+          if userCrossfade > 0 && (safeDuration - currentTime) <= userCrossfade {
+              if !isCrossfadingOut {
+                  isCrossfadingOut = true
+                  fadeOutAndAdvance(duration: userCrossfade)
+              }
+          }
+    }
+
+    private var isCrossfadingOut: Bool = false
+
+    private func fadeOutAndAdvance(duration: TimeInterval) {
+        let initialVolume = mixerNode.outputVolume
+        
+        Task {
+            let steps = 20
+            let sleepTime = duration / TimeInterval(steps)
+            
+            for i in 1...steps {
+                try? await Task.sleep(nanoseconds: UInt64(sleepTime * 1_000_000_000))
+                await MainActor.run {
+                    guard isPlaying else { return }
+                    mixerNode.outputVolume = max(0, initialVolume * Float(1.0 - (Double(i) / Double(steps))))
+                }
+            }
+            
+            await MainActor.run {
+                if repeatMode == .one {
+                    seek(to: 0)
+                    mixerNode.outputVolume = initialVolume
+                    play()
+                } else {
+                    skipNext()
+                    mixerNode.outputVolume = initialVolume
+                }
+            }
+        }
     }
 
     private func handlePlaybackFinished() {
+        guard !isCrossfadingOut else { return }
         isPlaying = false
         currentTime = duration
         stopProgressTimer()
