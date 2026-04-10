@@ -82,8 +82,10 @@ struct PlayerView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(isPresented: $showLyrics) {
+        .sheet(isPresented: $showLyrics) {
             LyricsPageView(isPresented: $showLyrics)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
         }
         .confirmationDialog(
             "\(player.currentTitle) · \(formatted(player.duration)) · \(player.currentArtist ?? "") · \(player.currentAlbum ?? "")",
@@ -372,33 +374,7 @@ struct LyricsPageView: View {
                 lyricsBackground
                     .ignoresSafeArea()
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { closeLyrics() } label: {
-                        Image(systemName: "xmark")
-                            .font(.subheadline.weight(.bold))
-                    }
-                }
-
-                ToolbarItem(placement: .principal) {
-                    VStack(spacing: 0) {
-                        Text(player.currentTitle)
-                            .font(.headline.weight(.semibold))
-                            .lineLimit(1)
-                        Text(player.currentArtist ?? "Unknown Artist")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.72))
-                            .lineLimit(1)
-                    }
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { closeLyrics() }
-                        .font(.subheadline.weight(.semibold))
-                }
-            }
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
     }
@@ -434,7 +410,7 @@ struct LyricsPageView: View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 32) {
-                    Color.clear.frame(height: 32)
+                    Color.clear.frame(height: 0)
 
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { i, line in
                         Button {
