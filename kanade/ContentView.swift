@@ -126,7 +126,11 @@ struct LibraryView: View {
                     }
                 }
             }
-            .searchable(text: $searchText, prompt: "Search Library")
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "Search Library"
+            )
         }
         .onAppear { reload() }
         .onChange(of: searchText) { reload() }
