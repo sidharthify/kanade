@@ -70,6 +70,7 @@ final class MusicPlayer {
         setupRemoteTransportControls()
         observeInterruptions()
         observeRouteChanges()
+        observeMediaServerReset()
         becomeFirstResponder()
     }
 
@@ -466,6 +467,35 @@ final class MusicPlayer {
                   let reasonValue = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
                   let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
             if reason == .oldDeviceUnavailable { self?.pause() }
+        }
+    }
+
+    // MARK: - Media server reset
+    // The media server can be killed by iOS when the screen locks or a call ends
+    // When it resets, AVAudioEngine stops silently. We need to rebuild the session
+    // and engine, then reschedule from the current playback position.
+    private func observeMediaServerReset() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let wasPlaying = self.isPlaying
+            let resumeTime = self.currentTime
+
+            // rebuild audio session
+            self.setupAudioSession()
+
+            // detach everything and rebuild the engine graph
+            self.engine.stop()
+            self.engine.detach(self.playerNode)
+            self.engine.detach(self.mixerNode)
+            self.engine.detach(self.eq.eqNode)
+            self.setupEngine()
+
+            // re-schedule from where we left off
+            self.seek(to: resumeTime)
+            if wasPlaying { self.play() }
         }
     }
 }
