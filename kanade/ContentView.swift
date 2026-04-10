@@ -54,21 +54,78 @@ struct ContentView: View {
     private var miniPlayerBottomPadding: CGFloat { 52 }
 
     var body: some View {
-        LibraryView(importer: importer)
-            .safeAreaInset(edge: .bottom) {
-                if player.hasTrackLoaded {
-                    MiniPlayerView(showPlayer: $showPlayer)
-                        .padding(.horizontal)
-                        .padding(.bottom, miniPlayerBottomPadding)
+        TabView {
+            LibraryView(
+                importer: importer,
+                title: "Library",
+                sections: [.songs, .albums],
+                searchPrompt: "Search Library",
+                initialSection: .songs
+            )
+            .tabItem {
+                Label("Library", systemImage: "music.note.list")
+            }
+
+            LibraryView(
+                importer: importer,
+                title: "Artists",
+                sections: [.artists],
+                searchPrompt: "Search Artists",
+                initialSection: .artists
+            )
+            .tabItem {
+                Label("Artists", systemImage: "person.2.fill")
+            }
+
+            SettingsView()
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
+                }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if player.hasTrackLoaded {
+                MiniPlayerView(showPlayer: $showPlayer)
+                    .padding(.horizontal)
+                    .padding(.bottom, miniPlayerBottomPadding)
+            }
+        }
+        .sheet(isPresented: $showPlayer) {
+            PlayerView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .tint(.white)
+        .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: - Settings
+struct SettingsView: View {
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("About") {
+                    LabeledContent("Version", value: appVersion)
+                    LabeledContent("Build", value: buildNumber)
+                }
+
+                Section("Support") {
+                    Text("Thanks for listening with Kanade.")
+                        .foregroundStyle(.secondary)
                 }
             }
-            .sheet(isPresented: $showPlayer) {
-                PlayerView()
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            }
-            .tint(.white)
-            .preferredColorScheme(.dark)
+            .scrollContentBackground(.hidden)
+            .background(Color.black)
+            .navigationTitle("Settings")
+        }
     }
 }
 
@@ -76,6 +133,10 @@ struct ContentView: View {
 struct LibraryView: View {
     @Environment(MusicPlayer.self) private var player
     @Bindable var importer: LibraryImporter
+    let title: String
+    let sections: [LibrarySection]
+    let searchPrompt: String
+    let showsSectionPicker: Bool
 
     @State private var tracks: [TrackRecord] = []
     @State private var albums: [AlbumSummary] = []
@@ -89,22 +150,44 @@ struct LibraryView: View {
     @State private var albumSort: AlbumSort = .name
     @State private var artistSort: ArtistSort = .name
 
+    init(
+        importer: LibraryImporter,
+        title: String = "Library",
+        sections: [LibrarySection] = LibrarySection.allCases,
+        searchPrompt: String = "Search Library",
+        showsSectionPicker: Bool = true,
+        initialSection: LibrarySection? = nil
+    ) {
+        self.importer = importer
+        self.title = title
+        self.sections = sections
+        self.searchPrompt = searchPrompt
+        self.showsSectionPicker = showsSectionPicker
+        let fallback = sections.first ?? .songs
+        let selected = initialSection ?? fallback
+        _section = State(initialValue: sections.contains(selected) ? selected : fallback)
+    }
+
     var body: some View {
+        let showSectionPicker = showsSectionPicker && sections.count > 1
+
         NavigationStack {
             VStack(spacing: 12) {
-                Picker("Library Section", selection: $section) {
-                    ForEach(LibrarySection.allCases) { item in
-                        Text(item.rawValue).tag(item)
+                if showSectionPicker {
+                    Picker("Library Section", selection: $section) {
+                        ForEach(sections) { item in
+                            Text(item.rawValue).tag(item)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
 
                 listContent
             }
-            .padding(.top, 8)
+            .padding(.top, showSectionPicker ? 8 : 0)
             .background(Color.black)
-            .navigationTitle("Library")
+            .navigationTitle(title)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     sortMenu
@@ -129,7 +212,7 @@ struct LibraryView: View {
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Search Library"
+                prompt: searchPrompt
             )
         }
         .onAppear { reload() }
