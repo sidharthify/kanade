@@ -60,9 +60,6 @@ final class MusicPlayer {
     private var currentSeekOffset: TimeInterval = 0
     private var scheduleToken: Int = 0
 
-    // true while the app is in the background; used to suppress spurious interruptions
-    private var isInBackground: Bool = false
-
     // Tracks which indices have been played when shuffling
     private var shuffledHistory: [Int] = []
 
@@ -75,7 +72,6 @@ final class MusicPlayer {
         observeRouteChanges()
         observeMediaServerReset()
         observeEngineConfigurationChange()
-        observeAppLifecycle()
         becomeFirstResponder()
     }
 
@@ -424,7 +420,7 @@ final class MusicPlayer {
                   let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
             switch type {
             case .began:
-                if !isInBackground { pause() }
+                if UIApplication.shared.applicationState == .active { pause() }
             case .ended:
                 if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt,
                    AVAudioSession.InterruptionOptions(rawValue: optionsValue).contains(.shouldResume) {
@@ -433,19 +429,6 @@ final class MusicPlayer {
             @unknown default: break
             }
         }
-    }
-
-    // MARK: - App lifecycle
-    private func observeAppLifecycle() {
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.willResignActiveNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in self?.isInBackground = true }
-
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in self?.isInBackground = false }
     }
 
     // MARK: - Format label
