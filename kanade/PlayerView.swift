@@ -256,6 +256,8 @@ struct PlayerView: View {
             Button { player.isPlaying ? player.pause() : player.play() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 24, weight: .bold))
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(.snappy, value: player.isPlaying)
                     .frame(width: 64, height: 64)
                     .background(Circle().fill(Color.white))
                     .foregroundStyle(.black)

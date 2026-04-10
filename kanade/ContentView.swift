@@ -544,6 +544,8 @@ struct MiniPlayerView: View {
                 } label: {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                         .font(.title2)
+                        .contentTransition(.symbolEffect(.replace))
+                        .animation(.snappy, value: player.isPlaying)
                         .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)
