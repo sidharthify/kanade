@@ -188,6 +188,7 @@ struct LibraryView: View {
             .padding(.top, showSectionPicker ? 8 : 0)
             .background(Color.black)
             .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     sortMenu
