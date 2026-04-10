@@ -146,6 +146,7 @@ struct LibraryView: View {
     @State private var showClearDialog = false
     @State private var searchText = ""
     @State private var section: LibrarySection = .songs
+    @State private var highlightedTrackId: String? = nil
     @State private var trackSort: TrackSort = .recent
     @State private var albumSort: AlbumSort = .name
     @State private var artistSort: ArtistSort = .name
@@ -269,10 +270,12 @@ struct LibraryView: View {
         case .songs:
             List(tracks) { track in
                 Button {
+                    flashTrackSelection(track.id)
                     play(track: track)
                 } label: {
                     TrackRow(track: track)
                 }
+                .buttonStyle(PressableRowButtonStyle())
                 .contextMenu {
                     Button(role: .destructive) {
                         removeTrack(track)
@@ -280,7 +283,7 @@ struct LibraryView: View {
                         Text("Remove from Library")
                     }
                 }
-                .listRowBackground(Color.black)
+                .listRowBackground(highlightedTrackId == track.id ? Color.white.opacity(0.16) : Color.black)
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -292,6 +295,7 @@ struct LibraryView: View {
                 } label: {
                     AlbumRow(album: album)
                 }
+                .buttonStyle(PressableRowButtonStyle())
                 .contextMenu {
                     Button(role: .destructive) {
                         removeAlbum(album)
@@ -311,6 +315,7 @@ struct LibraryView: View {
                 } label: {
                     ArtistRow(artist: artist)
                 }
+                .buttonStyle(PressableRowButtonStyle())
                 .contextMenu {
                     Button(role: .destructive) {
                         removeArtist(artist)
@@ -368,6 +373,18 @@ struct LibraryView: View {
 
     private func play(track: TrackRecord) {
         player.loadQueue(tracks: tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
+    }
+
+    private func flashTrackSelection(_ trackId: String) {
+        withAnimation(.snappy(duration: 0.15)) {
+            highlightedTrackId = trackId
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            guard highlightedTrackId == trackId else { return }
+            withAnimation(.snappy(duration: 0.2)) {
+                highlightedTrackId = nil
+            }
+        }
     }
 
     private func removeTrack(_ track: TrackRecord) {
@@ -588,6 +605,16 @@ struct VolumeSlider: UIViewRepresentable {
         return v
     }
     func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+}
+
+struct PressableRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(Color.white.opacity(configuration.isPressed ? 0.12 : 0.0))
+            .animation(.snappy(duration: 0.18), value: configuration.isPressed)
+    }
 }
 
 // MARK: - Rows
