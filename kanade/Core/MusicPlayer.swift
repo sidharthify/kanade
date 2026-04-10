@@ -71,6 +71,7 @@ final class MusicPlayer {
         observeInterruptions()
         observeRouteChanges()
         observeMediaServerReset()
+        observeEngineConfigurationChange()
         becomeFirstResponder()
     }
 
@@ -494,6 +495,26 @@ final class MusicPlayer {
             self.setupEngine()
 
             // re-schedule from where we left off
+            self.seek(to: resumeTime)
+            if wasPlaying { self.play() }
+        }
+    }
+
+    // MARK: - Engine configuration change
+    // When the app moves to the background, iOS may reconfigure the engine's
+    // I/O unit and stop the engine silently. Restart it and resume playback.
+    private func observeEngineConfigurationChange() {
+        NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let wasPlaying = self.isPlaying
+            let resumeTime = self.currentTime
+            if !self.engine.isRunning {
+                self.setupAudioSession()
+                try? self.engine.start()
+            }
             self.seek(to: resumeTime)
             if wasPlaying { self.play() }
         }
