@@ -59,6 +59,13 @@ struct PlayerView: View {
                 )
                 .shadow(color: .black.opacity(0.5), radius: 24, x: 0, y: 12)
 
+                if !player.audioFormatLabel.isEmpty {
+                    Text(player.audioFormatLabel)
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .padding(.top, 8)
+                }
+
                 Spacer(minLength: 16)
 
                 VStack(spacing: 16) {
