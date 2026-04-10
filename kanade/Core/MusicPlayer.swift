@@ -70,6 +70,7 @@ final class MusicPlayer {
         setupRemoteTransportControls()
         observeInterruptions()
         observeRouteChanges()
+        becomeFirstResponder()
     }
 
     // MARK: - Session
@@ -81,6 +82,10 @@ final class MusicPlayer {
         } catch {
             print("[MusicPlayer] AudioSession error: \(error)")
         }
+    }
+
+    private func becomeFirstResponder() {
+        UIApplication.shared.beginReceivingRemoteControlEvents()
     }
 
     // MARK: - Engine graph
@@ -373,6 +378,11 @@ final class MusicPlayer {
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
         info[MPMediaItemPropertyPlaybackDuration] = duration
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        
+        if let artworkURL = currentArtworkURL, let image = UIImage(contentsOfFile: artworkURL.path) {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        }
+        
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
