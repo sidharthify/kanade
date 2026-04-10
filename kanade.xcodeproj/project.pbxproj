@@ -14,9 +14,22 @@
 		3A37C1302F879EA000E47D18 /* kanade.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = kanade.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3A0DFF922F89144900BA5A0D /* Exceptions for "kanade" folder in "kanade" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3A37C12F2F879EA000E47D18 /* kanade */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3A37C1322F879EA000E47D18 /* kanade */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3A0DFF922F89144900BA5A0D /* Exceptions for "kanade" folder in "kanade" target */,
+			);
 			path = kanade;
 			sourceTree = "<group>";
 		};
@@ -101,7 +114,7 @@
 			mainGroup = 3A37C1272F879EA000E47D18;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				FA0000000000000000000001 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				FA0000000000000000000001 /* XCRemoteSwiftPackageReference "GRDB" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3A37C1312F879EA000E47D18 /* Products */;
@@ -132,25 +145,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		FA0000000000000000000001 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/groue/GRDB.swift";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 7.4.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		FA0000000000000000000002 /* GRDB */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = FA0000000000000000000001 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
-			productName = GRDB;
-		};
-/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		3A37C13C2F879EA100E47D18 /* Debug */ = {
@@ -285,13 +279,12 @@
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = F76Q3J6F82;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = kanade/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Kanade;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = (
-					audio,
-				);
+				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -323,13 +316,12 @@
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = F76Q3J6F82;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = kanade/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Kanade;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = (
-					audio,
-				);
+				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -370,6 +362,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		FA0000000000000000000001 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.4.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FA0000000000000000000002 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FA0000000000000000000001 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3A37C1282F879EA000E47D18 /* Project object */;
 }
