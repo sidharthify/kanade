@@ -51,7 +51,7 @@ struct ContentView: View {
     @State private var importer = LibraryImporter()
     @State private var showPlayer = false
 
-    private var miniPlayerBottomPadding: CGFloat { 52 }
+    private var miniPlayerBottomPadding: CGFloat { 72 }
 
     var body: some View {
         TabView {
@@ -509,62 +509,74 @@ struct MiniPlayerView: View {
     @Binding var showPlayer: Bool
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+
         VStack(spacing: 8) {
             HStack(spacing: 12) {
-                Button {
-                    showPlayer = true
-                } label: {
-                    HStack(spacing: 12) {
-                        ArtworkImage(
-                            trackId: player.currentTrackId,
-                            hasArtwork: player.currentHasArtwork,
-                            size: 44,
-                            cornerRadius: 10
-                        )
+                ArtworkImage(
+                    trackId: player.currentTrackId,
+                    hasArtwork: player.currentHasArtwork,
+                    size: artworkSize,
+                    cornerRadius: 10
+                )
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(player.currentTitle)
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(.primary) 
-                                .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(player.currentTitle)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
 
-                            Text(player.currentArtist ?? "Unknown Artist")
-                                .font(.caption)
-                                .foregroundStyle(.secondary) 
-                                .lineLimit(1)
-                        }
-                    }
+                    Text(player.currentArtist ?? "Unknown Artist")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .buttonStyle(.plain)
 
                 Spacer(minLength: 12)
 
-                Button {
-                    player.isPlaying ? player.pause() : player.play()
-                } label: {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title2)
-                        .contentTransition(.symbolEffect(.replace))
-                        .animation(.snappy, value: player.isPlaying)
-                        .foregroundStyle(.primary)
-                }
-                .buttonStyle(.plain)
+                Color.clear
+                    .frame(width: playButtonSize, height: playButtonSize)
             }
 
             ProgressView(value: player.currentTime, total: max(player.duration, 1))
-                .tint(.primary) 
+                .tint(.primary)
         }
         .padding(12)
         .background(
-            .ultraThinMaterial, 
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .ultraThinMaterial,
+            in: shape
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.quaternary, lineWidth: 0.5)
-        )
+        .overlay(shape.stroke(.quaternary, lineWidth: 0.5))
+        .overlay {
+            Button {
+                showPlayer = true
+            } label: {
+                Color.clear
+                    .contentShape(shape)
+            }
+            .buttonStyle(.plain)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                player.isPlaying ? player.pause() : player.play()
+            } label: {
+                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.title2)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(.snappy, value: player.isPlaying)
+                    .foregroundStyle(.primary)
+                    .frame(width: playButtonSize, height: playButtonSize)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            .padding(.trailing, 12)
+            .padding(.top, 12 + (artworkSize - playButtonSize) * 0.5)
+        }
         .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
     }
+
+    private var artworkSize: CGFloat { 44 }
+    private var playButtonSize: CGFloat { 32 }
 }
 
 // MARK: - Volume slider (wraps MPVolumeView since AVAudioSession.outputVolume is read-only)
