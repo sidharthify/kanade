@@ -60,6 +60,10 @@ final class MusicPlayer {
     private var currentSeekOffset: TimeInterval = 0
     private var scheduleToken: Int = 0
 
+    // suppresses the AVAudioEngineConfigurationChange notification that fires
+    // as a side-effect of rebuilding the graph in observeMediaServerReset
+    private var suppressConfigChange = false
+
     // Tracks which indices have been played when shuffling
     private var shuffledHistory: [Int] = []
 
@@ -489,12 +493,16 @@ final class MusicPlayer {
             // rebuild audio session
             self.setupAudioSession()
 
-            // detach everything and rebuild the engine graph
+            // detach everything and rebuild the engine graph.
+            // suppress the AVAudioEngineConfigurationChange that this triggers
+            // so the config-change handler doesn't interfere with our rebuild.
+            self.suppressConfigChange = true
             self.engine.stop()
             self.engine.detach(self.playerNode)
             self.engine.detach(self.mixerNode)
             self.engine.detach(self.eq.eqNode)
             self.setupEngine()
+            self.suppressConfigChange = false
 
             // re-schedule from where we left off
             self.seek(to: resumeTime)
@@ -503,22 +511,21 @@ final class MusicPlayer {
     }
 
     // MARK: - Engine configuration change
-    // When the app moves to the background, iOS may reconfigure the engine's
-    // I/O unit and stop the engine silently. Restart it and resume playback.
+    // When iOS reconfigures the audio engine, it may stop silently.
+    // Restart it and nudge the player node to continue, but never stop or seek,
+    // since stopping the node in the background prevents iOS from restarting it
+    // until the app returns to the foreground.
     private func observeEngineConfigurationChange() {
         NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: engine, queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            let wasPlaying = self.isPlaying
-            let resumeTime = self.currentTime
-            if !self.engine.isRunning {
-                self.setupAudioSession()
-                try? self.engine.start()
+            guard let self, !suppressConfigChange, isPlaying else { return }
+            if !engine.isRunning {
+                setupAudioSession()
+                try? engine.start()
             }
-            self.seek(to: resumeTime)
-            if wasPlaying { self.play() }
+            playerNode.play()
         }
     }
 }
