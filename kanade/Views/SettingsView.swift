@@ -17,9 +17,59 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Playback") {
-                    VStack(alignment: .leading) {
-                        Text("Crossfade Duration")
+                
+                Section(header: Text("Appearance")) {
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        
+                        Text("Theme")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        Text("Choose app appearance")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        Picker("Theme", selection: $appTheme) {
+                            Text("System").tag(0)
+                            Text("Light").tag(1)
+                            Text("Dark").tag(2)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .padding(.vertical, 4)
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        
+                        Text("Default Tab")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        Text("Tab to show on launch")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        Picker("Default Tab", selection: $defaultTab) {
+                            Text("Library").tag("Library")
+                            Text("Artists").tag("Artists")
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section(header: Text("Playback")) {
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        
+                        Text("Crossfade")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        Text("Overlap duration between tracks")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
                         HStack {
                             Slider(value: $crossfadeDuration, in: 0...12, step: 1)
                                 .tint(.accentColor)
@@ -28,47 +78,76 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .padding(.vertical, 4)
+                }
+
+                Section(header: Text("Performance")) {
+                    Toggle(isOn: $disableAnimations) {
+                        VStack(alignment: .leading) {
+                            Text("Reduce Animations")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            Text("Disable heavy UI transitions")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(.accentColor)
+                    .padding(.vertical, 4)
                 }
                 
-                Section("Appearance & Behavior") {
-                    Picker("Theme", selection: $appTheme) {
-                        Text("System").tag(0)
-                        Text("Light").tag(1)
-                        Text("Dark").tag(2)
-                    }
-                    
-                    Picker("Default Tab", selection: $defaultTab) {
-                        Text("Library").tag("Library")
-                        Text("Artists").tag("Artists")
-                    }
-
-                    Toggle("Reduce Animations", isOn: $disableAnimations)
-                        .tint(.accentColor)
-                }
-
-                Section("Data Cache") {
-                    Button(role: .destructive) {
+                Section(header: Text("Storage")) {
+                    Button(action: {
                         if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
                              try? FileManager.default.removeItem(at: docs.appendingPathComponent("Artwork"))
                              try? FileManager.default.createDirectory(at: docs.appendingPathComponent("Artwork"), withIntermediateDirectories: true)
                         }
-                    } label: {
-                        Text("Clear Artwork Cache")
+                    }) {
+                        VStack(alignment: .leading) {
+                            Text("Clear Image Cache")
+                                .font(.headline)
+                                .foregroundColor(.red)
+                            Text("Frees up local storage")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    .padding(.vertical, 4)
                 }
 
-                Section("About") {
-                    LabeledContent("Version", value: appVersion)
-                    LabeledContent("Build", value: buildNumber)
-                    Link("Source Code on GitHub", destination: URL(string: "https://github.com/sidharthify/kanade/")!)
-                }
-
-                Section("Support") {
-                    Text("Thanks for listening with Kanade. Made by sidharthify.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .listRowBackground(Color.clear)
+                Section(header: Text("About")) {
+                    LabeledContent {
+                        Text(appVersion)
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text("Version")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            Text("Build \(buildNumber)")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    
+                    if let url = URL(string: "https://github.com/sidharthify/kanade/") {
+                        Link(destination: url) {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text("Kanade OSS")
+                                        .font(.headline)
+                                        .foregroundColor(.primary)
+                                    Text("View Source on GitHub")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
                 }
             }
             .navigationTitle("Settings")
