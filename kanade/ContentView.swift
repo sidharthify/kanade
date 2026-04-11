@@ -142,6 +142,13 @@ struct ContentView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
+        .onChange(of: showPlayer) { _, newValue in
+            if newValue {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } else {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        }
         .tint(.accentColor)
         .preferredColorScheme(appTheme == 1 ? .light : (appTheme == 2 ? .dark : nil))
         .transaction { transaction in
@@ -632,6 +639,16 @@ struct MiniPlayerView: View {
             .offset(y: uiState.isMiniPlayerCompact ? 24 : 0)
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: uiState.isMiniPlayerCompact)
             .onTapGesture { showPlayer = true }
+            .contextMenu {
+                Button(role: .destructive) {
+                    if let trackId = player.currentTrackId {
+                        try? DatabaseManager.shared.deleteTrack(id: trackId)
+                        player.stop()
+                    }
+                } label: {
+                    Label("Delete from Library", systemImage: "trash")
+                }
+            }
         }
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
         .gesture(
