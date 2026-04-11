@@ -71,12 +71,13 @@ extension View {
 // MARK: - Mini Player Modifier
 struct MiniPlayerModifier: ViewModifier {
     @Environment(MusicPlayer.self) private var player
+    let shellNamespace: Namespace.ID
     @Binding var showPlayer: Bool
 
     func body(content: Content) -> some View {
         content.safeAreaInset(edge: .bottom) {
             if player.hasTrackLoaded {
-                MiniPlayerView(showPlayer: $showPlayer)
+                MiniPlayerView(showPlayer: $showPlayer, shellNamespace: shellNamespace)
                     .padding(.horizontal)
                     .padding(.vertical, 8)
                     .background(Color.clear)
@@ -86,8 +87,8 @@ struct MiniPlayerModifier: ViewModifier {
 }
 
 extension View {
-    func withMiniPlayer(showPlayer: Binding<Bool>) -> some View {
-        self.modifier(MiniPlayerModifier(showPlayer: showPlayer))
+    func withMiniPlayer(showPlayer: Binding<Bool>, shellNamespace: Namespace.ID) -> some View {
+        self.modifier(MiniPlayerModifier(shellNamespace: shellNamespace, showPlayer: showPlayer))
     }
 }
 
@@ -96,6 +97,7 @@ struct ContentView: View {
     @Environment(MusicPlayer.self) private var player
     @State private var importer = LibraryImporter()
     @State private var showPlayer = false
+    @Namespace private var playerShellNamespace
 
     @AppStorage("defaultTab") private var defaultTab = "Library"
     @AppStorage("appTheme") private var appTheme = 0
@@ -103,45 +105,49 @@ struct ContentView: View {
     @State private var selectedTab = "Library"
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            LibraryView(
-                importer: importer,
-                title: "Library",
-                sections: [.songs, .albums],
-                searchPrompt: "Search Library",
-                initialSection: .songs
-            )
-            .withMiniPlayer(showPlayer: $showPlayer)
-            .tabItem {
-                Label("Library", systemImage: "music.note.list")
-            }
-            .tag("Library")
-
-            LibraryView(
-                importer: importer,
-                title: "Artists",
-                sections: [.artists],
-                searchPrompt: "Search Artists",
-                initialSection: .artists
-            )
-            .withMiniPlayer(showPlayer: $showPlayer)
-            .tabItem {
-                Label("Artists", systemImage: "person.2.fill")
-            }
-            .tag("Artists")
-
-            SettingsView()
-                .withMiniPlayer(showPlayer: $showPlayer)
+        ZStack {
+            TabView(selection: $selectedTab) {
+                LibraryView(
+                    importer: importer,
+                    title: "Library",
+                    sections: [.songs, .albums],
+                    searchPrompt: "Search Library",
+                    initialSection: .songs
+                )
+                .withMiniPlayer(showPlayer: $showPlayer, shellNamespace: playerShellNamespace)
                 .tabItem {
-                    Label("Settings", systemImage: "gearshape")
+                    Label("Library", systemImage: "music.note.list")
                 }
-            .tag("Settings")
+                .tag("Library")
+
+                LibraryView(
+                    importer: importer,
+                    title: "Artists",
+                    sections: [.artists],
+                    searchPrompt: "Search Artists",
+                    initialSection: .artists
+                )
+                .withMiniPlayer(showPlayer: $showPlayer, shellNamespace: playerShellNamespace)
+                .tabItem {
+                    Label("Artists", systemImage: "person.2.fill")
+                }
+                .tag("Artists")
+
+                SettingsView()
+                    .withMiniPlayer(showPlayer: $showPlayer, shellNamespace: playerShellNamespace)
+                    .tabItem {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                    .tag("Settings")
+            }
+
+            if showPlayer {
+                PlayerView(shellNamespace: playerShellNamespace, isPresented: $showPlayer)
+                    .zIndex(1)
+                    .transition(.identity)
+            }
         }
-        .sheet(isPresented: $showPlayer) {
-            PlayerView()
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
+        .animation(playerMorphAnimation, value: showPlayer)
         .onChange(of: showPlayer) { _, newValue in
             if !newValue {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -158,6 +164,10 @@ struct ContentView: View {
         .onAppear {
             selectedTab = defaultTab
         }
+    }
+
+    private var playerMorphAnimation: Animation? {
+        disableAnimations ? nil : .spring(response: 0.52, dampingFraction: 0.86)
     }
 }
 
@@ -538,15 +548,17 @@ struct ArtistDetailView: View {
 }
 
 // MARK: - Mini Player
+private let playerShellMatchedID = "playerShellCapsule"
+
 struct MiniPlayerView: View {
     @Environment(MusicPlayer.self) private var player
     @Environment(AppUIState.self) private var uiState
     @Binding var showPlayer: Bool
+    let shellNamespace: Namespace.ID
     @AppStorage("disableAnimations") private var disableAnimations = false
 
     @State private var dragOffset: CGSize = .zero
     @State private var isAnimatingSkip = false
-    @State private var expandPulse: CGFloat = 1.0
     @State private var playIconScale: CGFloat = 1.0
     @State private var forwardIconScale: CGFloat = 1.0
     @State private var playBounceTrigger = 0
@@ -574,6 +586,7 @@ struct MiniPlayerView: View {
                     .padding(.trailing, 20)
             }
             .font(.subheadline.weight(.semibold))
+            .opacity(showPlayer ? 0 : 1)
 
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -676,10 +689,11 @@ struct MiniPlayerView: View {
             .offset(x: dragOffset.width * 0.38,
                     y: dragOffset.height < 0 ? dragOffset.height * 0.25 : dragOffset.height * 0.08)
             .opacity(isAnimatingSkip ? 0 : 1)
-            .scaleEffect(expandPulse * (uiState.isMiniPlayerCompact ? 0.85 : 1.0), anchor: .bottom)
+            .scaleEffect(uiState.isMiniPlayerCompact ? 0.85 : 1.0, anchor: .bottom)
             .opacity(uiState.isMiniPlayerCompact ? 0.4 : 1.0)
             .offset(y: uiState.isMiniPlayerCompact ? 24 : 0)
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: uiState.isMiniPlayerCompact)
+            .opacity(showPlayer ? 0 : 1)
             .contextMenu {
                 Button(role: .destructive) {
                     if let trackId = player.currentTrackId {
@@ -691,17 +705,23 @@ struct MiniPlayerView: View {
                 }
             }
         }
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.black.opacity(0.001))
+                .matchedGeometryEffect(id: playerShellMatchedID, in: shellNamespace)
+        }
+        .allowsHitTesting(!showPlayer)
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
         .gesture(
             DragGesture(minimumDistance: 12)
                 .onChanged { value in
-                    guard !isAnimatingSkip else { return }
+                    guard !showPlayer, !isAnimatingSkip else { return }
                     withAnimation(.interactiveSpring(response: 0.25, dampingFraction: 0.86)) {
                         dragOffset = value.translation
                     }
                 }
                 .onEnded { value in
-                    guard !isAnimatingSkip else { return }
+                    guard !showPlayer, !isAnimatingSkip else { return }
                     let h = value.translation.width
                     let v = value.translation.height
                     if abs(v) > abs(h) && v < expandThreshold {
@@ -724,17 +744,7 @@ struct MiniPlayerView: View {
             showPlayer = true
             return
         }
-        var tx = Transaction(animation: .spring(response: 0.34, dampingFraction: 0.52))
-        tx.disablesAnimations = false
-        withTransaction(tx) {
-            expandPulse = 1.06
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.11) {
-            var settle = Transaction(animation: .spring(response: 0.45, dampingFraction: 0.78))
-            settle.disablesAnimations = false
-            withTransaction(settle) {
-                expandPulse = 1.0
-            }
+        withAnimation(.spring(response: 0.52, dampingFraction: 0.86)) {
             showPlayer = true
         }
     }

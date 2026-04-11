@@ -7,6 +7,54 @@
 
 import SwiftUI
 import MediaPlayer
+import UIKit
+
+// MARK: - Matched shell id (must match `ContentView` / `MiniPlayerView`)
+
+private let playerShellCapsuleMorphID = "playerShellCapsule"
+
+// MARK: - Native play / pause (UIKit `UIButton.Configuration` sizing)
+
+private struct NativePlayPauseTransportControl: UIViewRepresentable {
+    var isPlaying: Bool
+    var onToggle: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onToggle: onToggle)
+    }
+
+    final class Coordinator: NSObject {
+        var onToggle: () -> Void
+        init(onToggle: @escaping () -> Void) { self.onToggle = onToggle }
+
+        @objc func tapped() {
+            onToggle()
+        }
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tapped), for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 72),
+            button.heightAnchor.constraint(equalToConstant: 72)
+        ])
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.onToggle = onToggle
+        var config = UIButton.Configuration.filled()
+        config.baseBackgroundColor = .white
+        config.baseForegroundColor = .black
+        config.cornerStyle = .capsule
+        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 31, weight: .medium)
+        config.image = UIImage(systemName: isPlaying ? "pause.fill" : "play.fill", withConfiguration: symbolConfig)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20)
+        button.configuration = config
+    }
+}
 
 // MARK: - Player chrome button style
 
@@ -18,11 +66,14 @@ private struct PlayerChromeButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - Player sheet
+// MARK: - Full player (matched from mini bar)
 
 struct PlayerView: View {
+    let shellNamespace: Namespace.ID
+    @Binding var isPresented: Bool
+
     @Environment(MusicPlayer.self) private var player
-    @Environment(\.dismiss) private var dismiss
+    @AppStorage("disableAnimations") private var disableAnimations = false
 
     @State private var isSeeking = false
     @State private var seekValue: Double = 0
@@ -31,64 +82,79 @@ struct PlayerView: View {
     @State private var showLyrics = false
     @State private var showOptions = false
     @State private var lyrics = LyricsManager.shared
+    @State private var dismissDragY: CGFloat = 0
+
     var body: some View {
         ZStack {
-            // background ignores all safe areas
-            artworkBackground
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.black)
+                .matchedGeometryEffect(id: playerShellCapsuleMorphID, in: shellNamespace)
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // top bar
-                HStack {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
+            ZStack {
+                artworkBackground
+                    .ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.35))
+                        .frame(width: 40, height: 5)
+                        .padding(.top, 10)
+                        .padding(.bottom, 6)
+                        .gesture(dismissPullGesture)
+
+                    HStack {
+                        Button { closePlayer() } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                        }
+                        Spacer()
+                        Button { showOptions = true } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                        }
                     }
-                    Spacer()
-                    Button { showOptions = true } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 4)
+
+                    Spacer(minLength: 16)
+
+                    ArtworkImage(
+                        trackId: player.currentTrackId,
+                        hasArtwork: player.currentHasArtwork,
+                        size: artworkDiameter,
+                        cornerRadius: 12
+                    )
+                    .shadow(color: .black.opacity(0.5), radius: 24, x: 0, y: 12)
+
+                    if !player.audioFormatLabel.isEmpty {
+                        Text(player.audioFormatLabel)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.6))
+                            .padding(.top, 8)
                     }
+
+                    Spacer(minLength: 16)
+
+                    VStack(spacing: 16) {
+                        trackInfo
+                        seekBar
+                        mainControls
+                        toolbar
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 12)
-                .padding(.top, 16)
-
-                Spacer(minLength: 16)
-
-                // fixed square artwork
-                ArtworkImage(
-                    trackId: player.currentTrackId,
-                    hasArtwork: player.currentHasArtwork,
-                    size: artworkDiameter,
-                    cornerRadius: 12
-                )
-                .shadow(color: .black.opacity(0.5), radius: 24, x: 0, y: 12)
-
-                if !player.audioFormatLabel.isEmpty {
-                    Text(player.audioFormatLabel)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
-                        .padding(.top, 8)
-                }
-
-                Spacer(minLength: 16)
-
-                VStack(spacing: 16) {
-                    trackInfo
-                    seekBar
-                    mainControls
-                    toolbar
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 24)
             }
         }
+        .offset(y: dismissDragY)
+        .animation(.interactiveSpring(response: 0.22, dampingFraction: 0.92), value: dismissDragY)
         .sheet(isPresented: $showEQ) {
             EQView()
                 .presentationDetents([.large])
@@ -152,6 +218,36 @@ struct PlayerView: View {
         }
     }
 
+    private var dismissPullGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onChanged { value in
+                let dy = value.translation.height
+                if dy > 0 { dismissDragY = dy }
+            }
+            .onEnded { value in
+                let predicted = value.predictedEndTranslation.height
+                if dismissDragY > 120 || predicted > 220 {
+                    closePlayer()
+                } else {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                        dismissDragY = 0
+                    }
+                }
+            }
+    }
+
+    private func closePlayer() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if disableAnimations {
+            dismissDragY = 0
+            isPresented = false
+            return
+        }
+        withAnimation(.spring(response: 0.52, dampingFraction: 0.86)) {
+            dismissDragY = 0
+            isPresented = false
+        }
+    }
 
     // MARK: - Artwork size
 
@@ -259,21 +355,10 @@ struct PlayerView: View {
             }
             .buttonStyle(PlayerChromeButtonStyle())
 
-            Button {
+            NativePlayPauseTransportControl(isPlaying: player.isPlaying) {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 player.isPlaying ? player.pause() : player.play()
-            } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 22, weight: .semibold))
-                    .contentTransition(.symbolEffect(.replace))
-                    .animation(.snappy, value: player.isPlaying)
-                    .frame(width: 64, height: 64)
             }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.circle)
-            .controlSize(.large)
-            .tint(.white)
-            .foregroundStyle(.black)
 
             Button { player.skipNext() } label: {
                 Image(systemName: "forward.fill")
