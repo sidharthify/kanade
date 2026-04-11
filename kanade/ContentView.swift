@@ -44,6 +44,30 @@ enum LibrarySection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+// MARK: - Scroll Tracking
+struct ScrollDirectionDetector: ViewModifier {
+    @Environment(AppUIState.self) private var uiState
+
+    func body(content: Content) -> some View {
+        content.onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y
+        } action: { oldValue, newValue in
+            let delta = newValue - oldValue
+            if delta > 4 {
+                uiState.isMiniPlayerCompact = true
+            } else if delta < -4 {
+                uiState.isMiniPlayerCompact = false
+            }
+        }
+    }
+}
+
+extension View {
+    func trackScrollDirection() -> some View {
+        self.modifier(ScrollDirectionDetector())
+    }
+}
+
 // MARK: - Mini Player Modifier
 struct MiniPlayerModifier: ViewModifier {
     @Environment(MusicPlayer.self) private var player
@@ -332,6 +356,7 @@ struct LibraryView: View {
                 .padding(.top, 16)
             }
         }
+        .trackScrollDirection()
     }
 
     private var sortMenu: some View {
@@ -452,6 +477,7 @@ struct AlbumDetailView: View {
             }
             .padding(.top, 8)
         }
+        .trackScrollDirection()
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.large)
         .onAppear { load() }
@@ -521,6 +547,7 @@ struct ArtistDetailView: View {
             }
             .padding(.top, 8)
         }
+        .trackScrollDirection()
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.large)
         .onAppear { load() }
@@ -562,6 +589,7 @@ struct ArtistDetailView: View {
 // MARK: - Mini Player
 struct MiniPlayerView: View {
     @Environment(MusicPlayer.self) private var player
+    @Environment(AppUIState.self) private var uiState
     @Binding var showPlayer: Bool
 
     @State private var dragOffset: CGSize = .zero
@@ -653,6 +681,10 @@ struct MiniPlayerView: View {
             .offset(x: dragOffset.width * 0.38,
                     y: dragOffset.height < 0 ? dragOffset.height * 0.25 : dragOffset.height * 0.08)
             .opacity(isAnimatingSkip ? 0 : 1)
+            .scaleEffect(uiState.isMiniPlayerCompact ? 0.85 : 1.0, anchor: .bottom)
+            .opacity(uiState.isMiniPlayerCompact ? 0.4 : 1.0)
+            .offset(y: uiState.isMiniPlayerCompact ? 24 : 0)
+            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: uiState.isMiniPlayerCompact)
             .onTapGesture { showPlayer = true }
         }
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)

@@ -131,6 +131,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            .trackScrollDirection()
             .navigationTitle("Settings")
         }
     }
