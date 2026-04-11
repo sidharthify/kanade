@@ -304,6 +304,8 @@ final class MusicPlayer {
     }
 
     func stop() {
+        crossfadeTask?.cancel()
+        crossfadeTask = nil
         invalidateSchedule()
         playerNode.stop()
         isPlaying = false
@@ -377,20 +379,31 @@ final class MusicPlayer {
     }
 
     private var isCrossfadingOut: Bool = false
+    private var crossfadeTask: Task<Void, Never>?
 
     private func fadeOutAndAdvance(duration: TimeInterval) {
         let initialVolume = mixerNode.outputVolume
         
-        Task {
+        crossfadeTask?.cancel()
+        crossfadeTask = Task {
             let steps = 20
             let sleepTime = duration / TimeInterval(steps)
             
             for i in 1...steps {
+                guard !Task.isCancelled else {
+                    await MainActor.run { mixerNode.outputVolume = initialVolume }
+                    return
+                }
                 try? await Task.sleep(nanoseconds: UInt64(sleepTime * 1_000_000_000))
                 await MainActor.run {
                     guard isPlaying else { return }
                     mixerNode.outputVolume = max(0, initialVolume * Float(1.0 - (Double(i) / Double(steps))))
                 }
+            }
+            
+            guard !Task.isCancelled else {
+                await MainActor.run { mixerNode.outputVolume = initialVolume }
+                return
             }
             
             await MainActor.run {

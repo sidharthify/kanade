@@ -95,25 +95,6 @@ struct SettingsView: View {
                     .tint(.accentColor)
                     .padding(.vertical, 4)
                 }
-                
-                Section(header: Text("Storage")) {
-                    Button(action: {
-                        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-                             try? FileManager.default.removeItem(at: docs.appendingPathComponent("Artwork"))
-                             try? FileManager.default.createDirectory(at: docs.appendingPathComponent("Artwork"), withIntermediateDirectories: true)
-                        }
-                    }) {
-                        VStack(alignment: .leading) {
-                            Text("Clear Image Cache")
-                                .font(.headline)
-                                .foregroundColor(.red)
-                            Text("Frees up local storage")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
 
                 Section(header: Text("About")) {
                     LabeledContent {

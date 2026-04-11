@@ -122,6 +122,7 @@ struct ContentView: View {
         .preferredColorScheme(appTheme == 1 ? .light : (appTheme == 2 ? .dark : nil))
         .transaction { transaction in
             if disableAnimations {
+                transaction.disablesAnimations = true
                 transaction.animation = nil
             }
         }
