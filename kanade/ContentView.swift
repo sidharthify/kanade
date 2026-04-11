@@ -173,7 +173,6 @@ struct LibraryView: View {
     @State private var showClearDialog = false
     @State private var searchText = ""
     @State private var section: LibrarySection = .songs
-    @State private var highlightedTrackId: String? = nil
     @State private var trackSort: TrackSort = .recent
     @State private var albumSort: AlbumSort = .name
     @State private var artistSort: ArtistSort = .name
@@ -292,30 +291,26 @@ struct LibraryView: View {
 
     @ViewBuilder
     private var listContent: some View {
-        ScrollView {
-            switch section {
-            case .songs:
-                LazyVStack(spacing: 8) {
-                    ForEach(tracks) { track in
-                        Button {
-                            flashTrackSelection(track.id)
-                            play(track: track)
-                        } label: {
-                            TrackRow(track: track)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal)
-                        .background(highlightedTrackId == track.id ? Color.gray.opacity(0.15) : Color.clear)
-                        .contextMenu {
-                            Button(role: .destructive) { removeTrack(track) } label: {
-                                Label("Remove from Library", systemImage: "trash")
-                            }
-                        }
+        switch section {
+        case .songs:
+            List(tracks) { track in
+                Button {
+                    play(track: track)
+                } label: {
+                    TrackRow(track: track)
+                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .contextMenu {
+                    Button(role: .destructive) { removeTrack(track) } label: {
+                        Label("Remove from Library", systemImage: "trash")
                     }
                 }
-                .padding(.top, 8)
+            }
+            .listStyle(.plain)
+            .trackScrollDirection()
 
-            case .albums:
+        case .albums:
+            ScrollView {
                 let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
                 LazyVGrid(columns: columns, spacing: 20) {
                     ForEach(albums) { album in
@@ -334,8 +329,11 @@ struct LibraryView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
+            }
+            .trackScrollDirection()
 
-            case .artists:
+        case .artists:
+            ScrollView {
                 let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
                 LazyVGrid(columns: columns, spacing: 24) {
                     ForEach(artists) { artist in
@@ -355,8 +353,8 @@ struct LibraryView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
             }
+            .trackScrollDirection()
         }
-        .trackScrollDirection()
     }
 
     private var sortMenu: some View {
@@ -403,18 +401,6 @@ struct LibraryView: View {
         player.loadQueue(tracks: tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
     }
 
-    private func flashTrackSelection(_ trackId: String) {
-        withAnimation(.snappy(duration: 0.15)) {
-            highlightedTrackId = trackId
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            guard highlightedTrackId == trackId else { return }
-            withAnimation(.snappy(duration: 0.2)) {
-                highlightedTrackId = nil
-            }
-        }
-    }
-
     private func removeTrack(_ track: TrackRecord) {
         do {
             try DatabaseManager.shared.deleteTrack(id: track.id)
@@ -451,32 +437,24 @@ struct AlbumDetailView: View {
     @Environment(MusicPlayer.self) private var player
     let album: AlbumSummary
     @State private var tracks: [TrackRecord] = []
-    @State private var highlightedTrackId: String?
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 8) {
-                ForEach(tracks) { track in
-                    Button {
-                        flashTrackSelection(track.id)
-                        play(track: track)
-                    } label: {
-                        TrackRow(track: track)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal)
-                    .background(highlightedTrackId == track.id ? Color.gray.opacity(0.15) : Color.clear)
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            remove(track)
-                        } label: {
-                            Label("Remove from Library", systemImage: "trash")
-                        }
-                    }
+        List(tracks) { track in
+            Button {
+                play(track: track)
+            } label: {
+                TrackRow(track: track)
+            }
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .contextMenu {
+                Button(role: .destructive) {
+                    remove(track)
+                } label: {
+                    Label("Remove from Library", systemImage: "trash")
                 }
             }
-            .padding(.top, 8)
         }
+        .listStyle(.plain)
         .trackScrollDirection()
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.large)
@@ -489,18 +467,6 @@ struct AlbumDetailView: View {
 
     private func play(track: TrackRecord) {
         player.loadQueue(tracks: tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
-    }
-
-    private func flashTrackSelection(_ trackId: String) {
-        withAnimation(.snappy(duration: 0.15)) {
-            highlightedTrackId = trackId
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            guard highlightedTrackId == trackId else { return }
-            withAnimation(.easeOut(duration: 0.3)) {
-                highlightedTrackId = nil
-            }
-        }
     }
 
     private func remove(_ track: TrackRecord) {
@@ -521,32 +487,24 @@ struct ArtistDetailView: View {
     @Environment(MusicPlayer.self) private var player
     let artist: ArtistSummary
     @State private var tracks: [TrackRecord] = []
-    @State private var highlightedTrackId: String?
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 8) {
-                ForEach(tracks) { track in
-                    Button {
-                        flashTrackSelection(track.id)
-                        play(track: track)
-                    } label: {
-                        TrackRow(track: track)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal)
-                    .background(highlightedTrackId == track.id ? Color.gray.opacity(0.15) : Color.clear)
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            remove(track)
-                        } label: {
-                            Label("Remove from Library", systemImage: "trash")
-                        }
-                    }
+        List(tracks) { track in
+            Button {
+                play(track: track)
+            } label: {
+                TrackRow(track: track)
+            }
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .contextMenu {
+                Button(role: .destructive) {
+                    remove(track)
+                } label: {
+                    Label("Remove from Library", systemImage: "trash")
                 }
             }
-            .padding(.top, 8)
         }
+        .listStyle(.plain)
         .trackScrollDirection()
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.large)
@@ -559,18 +517,6 @@ struct ArtistDetailView: View {
 
     private func play(track: TrackRecord) {
         player.loadQueue(tracks: tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
-    }
-
-    private func flashTrackSelection(_ trackId: String) {
-        withAnimation(.snappy(duration: 0.15)) {
-            highlightedTrackId = trackId
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            guard highlightedTrackId == trackId else { return }
-            withAnimation(.easeOut(duration: 0.3)) {
-                highlightedTrackId = nil
-            }
-        }
     }
 
     private func remove(_ track: TrackRecord) {
@@ -603,7 +549,6 @@ struct MiniPlayerView: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-        let progress = player.duration > 0 ? player.currentTime / player.duration : 0
 
         ZStack {
             HStack {
@@ -648,35 +593,36 @@ struct MiniPlayerView: View {
                                 .font(.title2)
                                 .contentTransition(.symbolEffect(.replace))
                                 .animation(.snappy, value: player.isPlaying)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(MiniPlayerSquishStyle())
                         .foregroundStyle(.primary)
                         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
 
                         Button { triggerSkip(next: true) } label: {
                             Image(systemName: "forward.fill")
                                 .font(.title3)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(MiniPlayerSquishStyle())
                         .foregroundStyle(.primary)
                         .accessibilityLabel("Skip Next")
                     }
-                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Rectangle().fill(.quaternary)
-                        Rectangle()
-                            .fill(.primary.opacity(0.55))
-                            .frame(width: geo.size.width * CGFloat(min(1, max(0, progress))))
-                    }
-                }
-                .frame(height: 2)
-                .clipShape(Capsule())
+                .padding(.vertical, 8)
             }
-            .background(.regularMaterial, in: shape)
-            .overlay(shape.stroke(.separator.opacity(0.5), lineWidth: 0.5))
+            .background {
+                if #available(iOS 26.0, *) {
+                    Color.clear
+                        .glassEffect(.regular.interactive(true))
+                        .clipShape(shape)
+                } else {
+                    shape.fill(.thinMaterial)
+                }
+            }
             .contentShape(shape)
             .offset(x: dragOffset.width * 0.38,
                     y: dragOffset.height < 0 ? dragOffset.height * 0.25 : dragOffset.height * 0.08)
@@ -741,9 +687,9 @@ struct MiniPlayerView: View {
 struct MiniPlayerSquishStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .opacity(configuration.isPressed ? 0.88 : 1)
-            .animation(.interpolatingSpring(stiffness: 320, damping: 22), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.90 : 1)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .animation(.interpolatingSpring(stiffness: 350, damping: 20), value: configuration.isPressed)
     }
 }
 
@@ -792,13 +738,6 @@ struct TrackRow: View {
                 .foregroundStyle(.tertiary)
                 .font(.system(size: 14, weight: .bold))
         }
-        .padding(10)
-        .background(Color.primary.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
         .contentShape(Rectangle())
     }
 }
