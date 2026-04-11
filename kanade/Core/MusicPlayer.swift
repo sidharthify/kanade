@@ -214,7 +214,7 @@ final class MusicPlayer {
         album: String? = nil,
         hasArtwork: Bool = false
     ) {
-        stop()
+        stop(clearPlaybackState: false)
         currentURL = url
         currentSeekOffset = 0
         currentTrackId = trackId
@@ -303,7 +303,8 @@ final class MusicPlayer {
         updateNowPlayingInfo()
     }
 
-    func stop() {
+    /// Stops the engine. When `clearPlaybackState` is true (default), clears queue and now‑playing so the mini player hides. `load(_:)` passes false so the queue survives a track change.
+    func stop(clearPlaybackState: Bool = true) {
         crossfadeTask?.cancel()
         crossfadeTask = nil
         invalidateSchedule()
@@ -314,6 +315,20 @@ final class MusicPlayer {
         currentTime = 0
         currentSeekOffset = 0
         stopProgressTimer()
+
+        guard clearPlaybackState else { return }
+
+        queue = []
+        currentQueueIndex = 0
+        shuffledHistory = []
+        currentURL = nil
+        currentTrackId = nil
+        currentHasArtwork = false
+        currentTitle = "No track loaded"
+        currentArtist = nil
+        currentAlbum = nil
+        audioFormatLabel = ""
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
     func seek(to time: TimeInterval) {

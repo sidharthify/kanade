@@ -8,6 +8,16 @@
 import SwiftUI
 import MediaPlayer
 
+// MARK: - Player chrome button style
+
+private struct PlayerChromeButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.62), value: configuration.isPressed)
+    }
+}
+
 // MARK: - Player sheet
 
 struct PlayerView: View {
@@ -176,36 +186,23 @@ struct PlayerView: View {
     // MARK: - Controls
 
     private var trackInfo: some View {
-        ZStack {
-            // text centered over the full available width
-            VStack(spacing: 2) {
-                Text(player.currentTitle)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                HStack(spacing: 4) {
-                    if let artist = player.currentArtist { Text(artist) }
-                    if let album = player.currentAlbum, !album.isEmpty {
-                        Text("·")
-                        Text(album)
-                    }
-                }
-                .font(.footnote)
-                .foregroundStyle(.white.opacity(0.6))
+        VStack(spacing: 2) {
+            Text(player.currentTitle)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.white)
                 .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-
-            // options button pinned to the right without affecting centering
-            HStack {
-                Spacer()
-                Button { showOptions = true } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.body)
-                        .foregroundStyle(.white.opacity(0.7))
+            HStack(spacing: 4) {
+                if let artist = player.currentArtist { Text(artist) }
+                if let album = player.currentAlbum, !album.isEmpty {
+                    Text("·")
+                    Text(album)
                 }
             }
+            .font(.footnote)
+            .foregroundStyle(.white.opacity(0.6))
+            .lineLimit(1)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var seekBar: some View {
@@ -253,34 +250,44 @@ struct PlayerView: View {
                     .font(.title3)
                     .foregroundStyle(player.repeatMode == .off ? .white.opacity(0.35) : .white)
             }
+            .buttonStyle(PlayerChromeButtonStyle())
 
             Button { player.skipPrevious() } label: {
                 Image(systemName: "backward.fill")
                     .font(.title)
                     .foregroundStyle(.white)
             }
+            .buttonStyle(PlayerChromeButtonStyle())
 
-            Button { player.isPlaying ? player.pause() : player.play() } label: {
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                player.isPlaying ? player.pause() : player.play()
+            } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(size: 22, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
                     .animation(.snappy, value: player.isPlaying)
                     .frame(width: 64, height: 64)
-                    .background(Circle().fill(Color.white))
-                    .foregroundStyle(.black)
             }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .tint(.white)
+            .foregroundStyle(.black)
 
             Button { player.skipNext() } label: {
                 Image(systemName: "forward.fill")
                     .font(.title)
                     .foregroundStyle(.white)
             }
+            .buttonStyle(PlayerChromeButtonStyle())
 
             Button { player.shuffleEnabled.toggle() } label: {
                 Image(systemName: "shuffle")
                     .font(.title3)
                     .foregroundStyle(player.shuffleEnabled ? .white : .white.opacity(0.35))
             }
+            .buttonStyle(PlayerChromeButtonStyle())
         }
         .frame(maxWidth: .infinity)
     }
@@ -314,13 +321,6 @@ struct PlayerView: View {
     }
 
     // MARK: - Helpers
-
-    private var remainingFormatted: String {
-        let rem = max(0, player.duration - player.currentTime)
-        guard rem.isFinite else { return "-0:00" }
-        let t = Int(rem)
-        return String(format: "-%d:%02d", t / 60, t % 60)
-    }
 
     private func formatted(_ time: TimeInterval) -> String {
         guard time.isFinite, !time.isNaN else { return "0:00" }

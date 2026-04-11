@@ -143,9 +143,7 @@ struct ContentView: View {
                 .presentationDragIndicator(.visible)
         }
         .onChange(of: showPlayer) { _, newValue in
-            if newValue {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            } else {
+            if !newValue {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
         }
@@ -544,9 +542,15 @@ struct MiniPlayerView: View {
     @Environment(MusicPlayer.self) private var player
     @Environment(AppUIState.self) private var uiState
     @Binding var showPlayer: Bool
+    @AppStorage("disableAnimations") private var disableAnimations = false
 
     @State private var dragOffset: CGSize = .zero
     @State private var isAnimatingSkip = false
+    @State private var expandPulse: CGFloat = 1.0
+    @State private var playIconScale: CGFloat = 1.0
+    @State private var forwardIconScale: CGFloat = 1.0
+    @State private var playBounceTrigger = 0
+    @State private var forwardBounceTrigger = 0
 
     private let skipThreshold: CGFloat  = 64
     private let expandThreshold: CGFloat = -50
@@ -573,31 +577,53 @@ struct MiniPlayerView: View {
 
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    ArtworkImage(
-                        trackId: player.currentTrackId,
-                        hasArtwork: player.currentHasArtwork,
-                        size: 44,
-                        cornerRadius: 10
-                    )
+                    Button(action: openFullPlayerWithBounce) {
+                        HStack(spacing: 12) {
+                            ArtworkImage(
+                                trackId: player.currentTrackId,
+                                hasArtwork: player.currentHasArtwork,
+                                size: 44,
+                                cornerRadius: 10
+                            )
 
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(player.currentTitle)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        Text(player.currentArtist ?? "Unknown Artist")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(player.currentTitle)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Text(player.currentArtist ?? "Unknown Artist")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.plain)
 
                     HStack(spacing: 4) {
                         Button {
+                            playBounceTrigger += 1
+                            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                            if !disableAnimations {
+                                withAnimation(.spring(response: 0.26, dampingFraction: 0.48)) {
+                                    playIconScale = 1.14
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                    withAnimation(.spring(response: 0.38, dampingFraction: 0.68)) {
+                                        playIconScale = 1.0
+                                    }
+                                }
+                            }
                             player.isPlaying ? player.pause() : player.play()
                         } label: {
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.title2)
+                                .scaleEffect(playIconScale)
+                                .symbolEffect(.bounce, value: playBounceTrigger)
                                 .contentTransition(.symbolEffect(.replace))
                                 .animation(.snappy, value: player.isPlaying)
                                 .frame(width: 44, height: 44)
@@ -607,9 +633,25 @@ struct MiniPlayerView: View {
                         .foregroundStyle(.primary)
                         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
 
-                        Button { triggerSkip(next: true) } label: {
+                        Button {
+                            forwardBounceTrigger += 1
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            if !disableAnimations {
+                                withAnimation(.spring(response: 0.26, dampingFraction: 0.48)) {
+                                    forwardIconScale = 1.14
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                    withAnimation(.spring(response: 0.38, dampingFraction: 0.68)) {
+                                        forwardIconScale = 1.0
+                                    }
+                                }
+                            }
+                            player.skipNext()
+                        } label: {
                             Image(systemName: "forward.fill")
                                 .font(.title3)
+                                .scaleEffect(forwardIconScale)
+                                .symbolEffect(.bounce, value: forwardBounceTrigger)
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
@@ -634,11 +676,10 @@ struct MiniPlayerView: View {
             .offset(x: dragOffset.width * 0.38,
                     y: dragOffset.height < 0 ? dragOffset.height * 0.25 : dragOffset.height * 0.08)
             .opacity(isAnimatingSkip ? 0 : 1)
-            .scaleEffect(uiState.isMiniPlayerCompact ? 0.85 : 1.0, anchor: .bottom)
+            .scaleEffect(expandPulse * (uiState.isMiniPlayerCompact ? 0.85 : 1.0), anchor: .bottom)
             .opacity(uiState.isMiniPlayerCompact ? 0.4 : 1.0)
             .offset(y: uiState.isMiniPlayerCompact ? 24 : 0)
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: uiState.isMiniPlayerCompact)
-            .onTapGesture { showPlayer = true }
             .contextMenu {
                 Button(role: .destructive) {
                     if let trackId = player.currentTrackId {
@@ -665,7 +706,7 @@ struct MiniPlayerView: View {
                     let v = value.translation.height
                     if abs(v) > abs(h) && v < expandThreshold {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { dragOffset = .zero }
-                        showPlayer = true
+                        openFullPlayerWithBounce()
                     } else if h < -skipThreshold {
                         animateSkip(toRight: false) { player.skipNext() }
                     } else if h > skipThreshold {
@@ -675,6 +716,27 @@ struct MiniPlayerView: View {
                     }
                 }
         )
+    }
+
+    private func openFullPlayerWithBounce() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if disableAnimations {
+            showPlayer = true
+            return
+        }
+        var tx = Transaction(animation: .spring(response: 0.34, dampingFraction: 0.52))
+        tx.disablesAnimations = false
+        withTransaction(tx) {
+            expandPulse = 1.06
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.11) {
+            var settle = Transaction(animation: .spring(response: 0.45, dampingFraction: 0.78))
+            settle.disablesAnimations = false
+            withTransaction(settle) {
+                expandPulse = 1.0
+            }
+            showPlayer = true
+        }
     }
 
     private func animateSkip(toRight: Bool, action: @escaping () -> Void) {
@@ -694,19 +756,14 @@ struct MiniPlayerView: View {
             withAnimation(.spring(response: 0.38, dampingFraction: 0.78)) { dragOffset = .zero }
         }
     }
-
-    private func triggerSkip(next: Bool) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        animateSkip(toRight: !next) { next ? player.skipNext() : player.skipPrevious() }
-    }
 }
 
 struct MiniPlayerSquishStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.90 : 1)
-            .opacity(configuration.isPressed ? 0.6 : 1)
-            .animation(.interpolatingSpring(stiffness: 350, damping: 20), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.88 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.55), value: configuration.isPressed)
     }
 }
 
