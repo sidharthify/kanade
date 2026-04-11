@@ -204,13 +204,11 @@ struct LibraryView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
-                            .foregroundStyle(.white)
                     }
                     Button {
                         showPicker = true
                     } label: {
                         Image(systemName: "plus.circle.fill")
-                            .foregroundStyle(.white)
                     }
                 }
             }
@@ -282,7 +280,7 @@ struct LibraryView: View {
                         }
                         .buttonStyle(.plain)
                         .padding(.horizontal)
-                        .opacity(highlightedTrackId == track.id ? 0.6 : 1.0)
+                        .background(highlightedTrackId == track.id ? Color.gray.opacity(0.15) : Color.clear)
                         .contextMenu {
                             Button(role: .destructive) { removeTrack(track) } label: {
                                 Label("Remove from Library", systemImage: "trash")
@@ -359,7 +357,6 @@ struct LibraryView: View {
             }
         } label: {
             Image(systemName: "arrow.up.arrow.down")
-                .foregroundStyle(.white)
         }
     }
 
@@ -442,7 +439,7 @@ struct AlbumDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal)
-                    .opacity(highlightedTrackId == track.id ? 0.6 : 1.0)
+                    .background(highlightedTrackId == track.id ? Color.gray.opacity(0.15) : Color.clear)
                     .contextMenu {
                         Button(role: .destructive) {
                             remove(track)
@@ -497,18 +494,21 @@ struct ArtistDetailView: View {
     @Environment(MusicPlayer.self) private var player
     let artist: ArtistSummary
     @State private var tracks: [TrackRecord] = []
+    @State private var highlightedTrackId: String?
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 8) {
                 ForEach(tracks) { track in
                     Button {
+                        flashTrackSelection(track.id)
                         play(track: track)
                     } label: {
                         TrackRow(track: track)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal)
+                    .background(highlightedTrackId == track.id ? Color.gray.opacity(0.15) : Color.clear)
                     .contextMenu {
                         Button(role: .destructive) {
                             remove(track)
@@ -531,6 +531,18 @@ struct ArtistDetailView: View {
 
     private func play(track: TrackRecord) {
         player.loadQueue(tracks: tracks, startingAt: tracks.firstIndex(of: track) ?? 0)
+    }
+
+    private func flashTrackSelection(_ trackId: String) {
+        withAnimation(.snappy(duration: 0.15)) {
+            highlightedTrackId = trackId
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            guard highlightedTrackId == trackId else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                highlightedTrackId = nil
+            }
+        }
     }
 
     private func remove(_ track: TrackRecord) {
@@ -748,11 +760,11 @@ struct TrackRow: View {
                 .font(.system(size: 14, weight: .bold))
         }
         .padding(10)
-        .background(Color.white.opacity(0.06))
+        .background(Color.primary.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
         .contentShape(Rectangle())
     }
