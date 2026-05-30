@@ -44,30 +44,6 @@ enum LibrarySection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-// MARK: - Scroll Tracking
-struct ScrollDirectionDetector: ViewModifier {
-    @Environment(AppUIState.self) private var uiState
-
-    func body(content: Content) -> some View {
-        content.onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.contentOffset.y
-        } action: { oldValue, newValue in
-            let delta = newValue - oldValue
-            if delta > 4 {
-                uiState.isMiniPlayerCompact = true
-            } else if delta < -4 {
-                uiState.isMiniPlayerCompact = false
-            }
-        }
-    }
-}
-
-extension View {
-    func trackScrollDirection() -> some View {
-        self.modifier(ScrollDirectionDetector())
-    }
-}
-
 // MARK: - Mini Player Modifier
 struct MiniPlayerModifier: ViewModifier {
     @Environment(MusicPlayer.self) private var player
@@ -314,7 +290,6 @@ struct LibraryView: View {
                 }
             }
             .listStyle(.plain)
-            .trackScrollDirection()
 
         case .albums:
             ScrollView {
@@ -337,7 +312,6 @@ struct LibraryView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
             }
-            .trackScrollDirection()
 
         case .artists:
             ScrollView {
@@ -360,7 +334,6 @@ struct LibraryView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
             }
-            .trackScrollDirection()
         }
     }
 
@@ -462,7 +435,6 @@ struct AlbumDetailView: View {
             }
         }
         .listStyle(.plain)
-        .trackScrollDirection()
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.large)
         .onAppear { load() }
@@ -512,7 +484,6 @@ struct ArtistDetailView: View {
             }
         }
         .listStyle(.plain)
-        .trackScrollDirection()
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.large)
         .onAppear { load() }
@@ -649,23 +620,22 @@ struct MiniPlayerView: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-            }
-            .overlay(alignment: .bottom) {
-                // progress bar pinned to the bottom edge, clipped to the pill shape
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+
+                // fully integrated, full-width progress bar at the very bottom edge
                 GeometryReader { geo in
-                    Capsule()
-                        .fill(Color.primary.opacity(0.35))
-                        .frame(width: geo.size.width * playbackFraction, height: 2.5)
-                        .animation(.linear(duration: 0.5), value: playbackFraction)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ZStack(alignment: .leading) {
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.06))
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.35))
+                            .frame(width: geo.size.width * playbackFraction)
+                            .animation(.linear(duration: 0.5), value: playbackFraction)
+                    }
                 }
                 .frame(height: 2.5)
-                .padding(.horizontal, 6)
-                .padding(.bottom, 3)
             }
-            .clipShape(shape)
             .background {
                 if #available(iOS 26.0, *) {
                     Color.clear
@@ -675,14 +645,11 @@ struct MiniPlayerView: View {
                     shape.fill(.thinMaterial)
                 }
             }
+            .clipShape(shape)
             .contentShape(shape)
             .offset(x: dragOffset.width * 0.38,
                     y: dragOffset.height < 0 ? dragOffset.height * 0.25 : dragOffset.height * 0.08)
             .opacity(isAnimatingSkip ? 0 : 1)
-            .scaleEffect(uiState.isMiniPlayerCompact ? 0.85 : 1.0, anchor: .bottom)
-            .opacity(uiState.isMiniPlayerCompact ? 0.4 : 1.0)
-            .offset(y: uiState.isMiniPlayerCompact ? 24 : 0)
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: uiState.isMiniPlayerCompact)
             .onTapGesture {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showPlayer = true

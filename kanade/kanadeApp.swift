@@ -9,7 +9,6 @@ import SwiftUI
 
 @Observable
 final class AppUIState {
-    var isMiniPlayerCompact = false
 }
 
 @main
