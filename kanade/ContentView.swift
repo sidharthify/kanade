@@ -549,6 +549,7 @@ struct MiniPlayerView: View {
     @State private var isAnimatingSkip = false
     @State private var playBounceTrigger = 0
     @State private var forwardBounceTrigger = 0
+    @State private var showMiniPlayerOptions = false
 
     private let skipThreshold: CGFloat  = 64
     private let expandThreshold: CGFloat = -50
@@ -624,8 +625,6 @@ struct MiniPlayerView: View {
                         } label: {
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.title2)
-                                .contentTransition(.symbolEffect(.replace))
-                                .animation(.snappy, value: player.isPlaying)
                                 .symbolEffect(.bounce, value: playBounceTrigger)
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
@@ -651,24 +650,22 @@ struct MiniPlayerView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
-                .padding(.bottom, 6)
-
-                // thin playback progress bar along the bottom
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.primary.opacity(0.08))
-                            .frame(height: 3)
-                        Capsule()
-                            .fill(Color.primary.opacity(0.35))
-                            .frame(width: geo.size.width * playbackFraction, height: 3)
-                            .animation(.linear(duration: 0.5), value: playbackFraction)
-                    }
-                }
-                .frame(height: 3)
-                .padding(.horizontal, 14)
-                .padding(.bottom, 6)
+                .padding(.bottom, 4)
             }
+            .overlay(alignment: .bottom) {
+                // progress bar pinned to the bottom edge, clipped to the pill shape
+                GeometryReader { geo in
+                    Capsule()
+                        .fill(Color.primary.opacity(0.35))
+                        .frame(width: geo.size.width * playbackFraction, height: 2.5)
+                        .animation(.linear(duration: 0.5), value: playbackFraction)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: 2.5)
+                .padding(.horizontal, 6)
+                .padding(.bottom, 3)
+            }
+            .clipShape(shape)
             .background {
                 if #available(iOS 26.0, *) {
                     Color.clear
@@ -690,29 +687,23 @@ struct MiniPlayerView: View {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showPlayer = true
             }
-            .contextMenu {
-                Button {
-                    player.skipPrevious()
-                } label: {
-                    Label("Previous Track", systemImage: "backward.fill")
-                }
-                Button {
-                    player.skipNext()
-                } label: {
-                    Label("Next Track", systemImage: "forward.fill")
-                }
-                Divider()
-                Button(role: .destructive) {
-                    if let trackId = player.currentTrackId {
-                        try? DatabaseManager.shared.deleteTrack(id: trackId)
-                        player.stop()
-                    }
-                } label: {
-                    Label("Delete from Library", systemImage: "trash")
-                }
+            .onLongPressGesture {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showMiniPlayerOptions = true
             }
         }
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        .confirmationDialog(player.currentTitle, isPresented: $showMiniPlayerOptions, titleVisibility: .visible) {
+            Button { player.skipPrevious() } label: { Text("Previous Track") }
+            Button { player.skipNext() } label: { Text("Next Track") }
+            Button("Delete from Library", role: .destructive) {
+                if let trackId = player.currentTrackId {
+                    try? DatabaseManager.shared.deleteTrack(id: trackId)
+                    player.stop()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
         .gesture(
             DragGesture(minimumDistance: 12)
                 .onChanged { value in
