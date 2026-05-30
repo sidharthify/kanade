@@ -218,26 +218,48 @@ final class DatabaseManager {
     }
 
     func deleteTrack(id: String) throws {
+        // fetch the filename before deleting so we can clean up the file
+        let filename: String? = try dbQueue.read { db in
+            try Row.fetchOne(db, sql: "SELECT filename FROM track WHERE id = ?", arguments: [id])?["filename"]
+        }
         try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM track WHERE id = ?", arguments: [id])
             try pruneEmptyAlbumsAndArtists(in: db)
         }
+        cleanupFiles(trackId: id, filename: filename)
     }
 
     func deleteAlbum(id: String) throws {
+        // collect track files before deleting
+        let tracks: [(id: String, filename: String?)] = try dbQueue.read { db in
+            try Row.fetchAll(db, sql: "SELECT id, filename FROM track WHERE albumId = ?", arguments: [id]).map {
+                (id: $0["id"] as String, filename: $0["filename"] as String?)
+            }
+        }
         try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM track WHERE albumId = ?", arguments: [id])
             try db.execute(sql: "DELETE FROM album WHERE id = ?", arguments: [id])
             try pruneEmptyAlbumsAndArtists(in: db)
         }
+        for track in tracks {
+            cleanupFiles(trackId: track.id, filename: track.filename)
+        }
     }
 
     func deleteArtist(id: String) throws {
+        let tracks: [(id: String, filename: String?)] = try dbQueue.read { db in
+            try Row.fetchAll(db, sql: "SELECT id, filename FROM track WHERE artistId = ?", arguments: [id]).map {
+                (id: $0["id"] as String, filename: $0["filename"] as String?)
+            }
+        }
         try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM track WHERE artistId = ?", arguments: [id])
             try db.execute(sql: "DELETE FROM album WHERE artistId = ?", arguments: [id])
             try db.execute(sql: "DELETE FROM artist WHERE id = ?", arguments: [id])
             try pruneEmptyAlbumsAndArtists(in: db)
+        }
+        for track in tracks {
+            cleanupFiles(trackId: track.id, filename: track.filename)
         }
     }
 
@@ -386,6 +408,20 @@ final class DatabaseManager {
         try db.execute(
             sql: "DELETE FROM artist WHERE id NOT IN (SELECT DISTINCT artistId FROM track WHERE artistId IS NOT NULL)"
         )
+    }
+
+    /// removes the audio file and artwork for a deleted track.
+    private func cleanupFiles(trackId: String, filename: String?) {
+        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let fm = FileManager.default
+
+        if let filename {
+            let audioURL = docsDir.appendingPathComponent(filename)
+            try? fm.removeItem(at: audioURL)
+        }
+
+        let artworkURL = docsDir.appendingPathComponent("Artwork").appendingPathComponent("\(trackId).jpg")
+        try? fm.removeItem(at: artworkURL)
     }
 }
 

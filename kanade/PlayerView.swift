@@ -107,7 +107,7 @@ struct PlayerView: View {
             }
             Button("Delete from Queue", role: .destructive) {
                 if let idx = player.queue.firstIndex(where: { $0.id == player.currentTrackId }) {
-                    player.queue.remove(at: idx)
+                    player.removeFromQueue(at: idx)
                 }
             }
             Button("Open in") {
@@ -288,9 +288,9 @@ struct PlayerView: View {
 
     private var toolbar: some View {
         HStack {
-            Image(systemName: "speaker.wave.2")
-                .font(.title3)
-                .foregroundStyle(.white.opacity(0.35))
+            VolumeSlider()
+                .frame(height: 32)
+                .frame(maxWidth: 110)
             Spacer()
             Button { showEQ = true } label: {
                 Image(systemName: "slider.vertical.3")

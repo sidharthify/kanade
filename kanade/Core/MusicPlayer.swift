@@ -205,6 +205,37 @@ final class MusicPlayer {
         playCurrentQueueItem()
     }
 
+    // MARK: - Queue management
+
+    /// removes a track from the queue by index. If the currently playing track
+    /// is removed, playback advances to the next track, or stops if the queue is empty.
+    func removeFromQueue(at index: Int) {
+        guard queue.indices.contains(index) else { return }
+        let wasCurrentTrack = index == currentQueueIndex
+
+        queue.remove(at: index)
+
+        // fix up shuffled history, remove this index and shift indices above it
+        shuffledHistory = shuffledHistory.compactMap { i in
+            if i == index { return nil }
+            return i > index ? i - 1 : i
+        }
+
+        if queue.isEmpty {
+            stop()
+            return
+        }
+
+        if wasCurrentTrack {
+            // clamp the index into bounds
+            currentQueueIndex = min(currentQueueIndex, queue.count - 1)
+            playCurrentQueueItem()
+        } else if index < currentQueueIndex {
+            // we removed something before the current track, so shift down
+            currentQueueIndex -= 1
+        }
+    }
+
     // MARK: - Load (single file, internal or direct use)
     func load(
         url: URL,

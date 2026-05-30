@@ -44,16 +44,25 @@ final class LibraryImporter {
             return
         }
         
+        // track which root URLs we secured so we can release them after processing
+        var securedRoots: [URL] = []
+        for url in urls {
+            if url.startAccessingSecurityScopedResource() {
+                securedRoots.append(url)
+            }
+        }
+
         let filesToProcess = collectFiles(from: urls, fileManager: fileManager)
         let total = filesToProcess.count
         await MainActor.run { self.totalCount = total }
         
         for file in filesToProcess {
-            let secured = file.startAccessingSecurityScopedResource()
             await processFile(file, destinationURL: libraryDir, artworkURL: artworkDir)
-            if secured { file.stopAccessingSecurityScopedResource() }
-            
             await MainActor.run { self.importedCount += 1 }
+        }
+
+        for root in securedRoots {
+            root.stopAccessingSecurityScopedResource()
         }
         
         await finishImport()
@@ -156,8 +165,6 @@ final class LibraryImporter {
         var files: [URL] = []
 
         for url in urls {
-            let secured = url.startAccessingSecurityScopedResource()
-
             var isDir: ObjCBool = false
             if fileManager.fileExists(atPath: url.path, isDirectory: &isDir) {
                 if isDir.boolValue {
@@ -171,10 +178,6 @@ final class LibraryImporter {
                 } else if supportedExtensions.contains(url.pathExtension.lowercased()) {
                     files.append(url)
                 }
-            }
-
-            if secured {
-                url.stopAccessingSecurityScopedResource()
             }
         }
 
