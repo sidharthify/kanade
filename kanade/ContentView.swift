@@ -547,6 +547,8 @@ struct MiniPlayerView: View {
 
     @State private var dragOffset: CGSize = .zero
     @State private var isAnimatingSkip = false
+    @State private var playBounceTrigger = 0
+    @State private var forwardBounceTrigger = 0
 
     private let skipThreshold: CGFloat  = 64
     private let expandThreshold: CGFloat = -50
@@ -554,31 +556,53 @@ struct MiniPlayerView: View {
     private var leftProgress:  CGFloat { max(0, min(1, -dragOffset.width / skipThreshold)) }
     private var rightProgress: CGFloat { max(0, min(1,  dragOffset.width / skipThreshold)) }
 
+    private var playbackFraction: CGFloat {
+        guard player.duration.isFinite, player.duration > 0,
+              player.currentTime.isFinite else { return 0 }
+        return CGFloat(min(max(player.currentTime / player.duration, 0), 1))
+    }
+
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
         ZStack {
+            // skip hint icons behind the pill
             HStack {
                 Image(systemName: "backward.fill")
                     .foregroundStyle(.secondary)
                     .opacity(rightProgress)
+                    .scaleEffect(0.8 + rightProgress * 0.2)
                     .padding(.leading, 20)
                 Spacer()
                 Image(systemName: "forward.fill")
                     .foregroundStyle(.secondary)
                     .opacity(leftProgress)
+                    .scaleEffect(0.8 + leftProgress * 0.2)
                     .padding(.trailing, 20)
             }
             .font(.subheadline.weight(.semibold))
 
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    ArtworkImage(
-                        trackId: player.currentTrackId,
-                        hasArtwork: player.currentHasArtwork,
-                        size: 44,
-                        cornerRadius: 10
-                    )
+                    // artwork with playing indicator overlay
+                    ZStack(alignment: .bottomTrailing) {
+                        ArtworkImage(
+                            trackId: player.currentTrackId,
+                            hasArtwork: player.currentHasArtwork,
+                            size: 44,
+                            cornerRadius: 10
+                        )
+
+                        if player.isPlaying {
+                            Image(systemName: "waveform")
+                                .symbolEffect(.variableColor.iterative, isActive: player.isPlaying)
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(2)
+                                .background(Circle().fill(.black.opacity(0.5)))
+                                .offset(x: 2, y: 2)
+                        }
+                    }
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(player.currentTitle)
@@ -594,12 +618,15 @@ struct MiniPlayerView: View {
 
                     HStack(spacing: 4) {
                         Button {
+                            playBounceTrigger += 1
+                            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                             player.isPlaying ? player.pause() : player.play()
                         } label: {
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.title2)
                                 .contentTransition(.symbolEffect(.replace))
                                 .animation(.snappy, value: player.isPlaying)
+                                .symbolEffect(.bounce, value: playBounceTrigger)
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
@@ -607,9 +634,13 @@ struct MiniPlayerView: View {
                         .foregroundStyle(.primary)
                         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
 
-                        Button { triggerSkip(next: true) } label: {
+                        Button {
+                            forwardBounceTrigger += 1
+                            triggerSkip(next: true)
+                        } label: {
                             Image(systemName: "forward.fill")
                                 .font(.title3)
+                                .symbolEffect(.bounce, value: forwardBounceTrigger)
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
@@ -619,7 +650,24 @@ struct MiniPlayerView: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.top, 8)
+                .padding(.bottom, 6)
+
+                // thin playback progress bar along the bottom
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.primary.opacity(0.08))
+                            .frame(height: 3)
+                        Capsule()
+                            .fill(Color.primary.opacity(0.35))
+                            .frame(width: geo.size.width * playbackFraction, height: 3)
+                            .animation(.linear(duration: 0.5), value: playbackFraction)
+                    }
+                }
+                .frame(height: 3)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 6)
             }
             .background {
                 if #available(iOS 26.0, *) {
@@ -638,8 +686,22 @@ struct MiniPlayerView: View {
             .opacity(uiState.isMiniPlayerCompact ? 0.4 : 1.0)
             .offset(y: uiState.isMiniPlayerCompact ? 24 : 0)
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: uiState.isMiniPlayerCompact)
-            .onTapGesture { showPlayer = true }
+            .onTapGesture {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showPlayer = true
+            }
             .contextMenu {
+                Button {
+                    player.skipPrevious()
+                } label: {
+                    Label("Previous Track", systemImage: "backward.fill")
+                }
+                Button {
+                    player.skipNext()
+                } label: {
+                    Label("Next Track", systemImage: "forward.fill")
+                }
+                Divider()
                 Button(role: .destructive) {
                     if let trackId = player.currentTrackId {
                         try? DatabaseManager.shared.deleteTrack(id: trackId)
@@ -665,6 +727,7 @@ struct MiniPlayerView: View {
                     let v = value.translation.height
                     if abs(v) > abs(h) && v < expandThreshold {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { dragOffset = .zero }
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         showPlayer = true
                     } else if h < -skipThreshold {
                         animateSkip(toRight: false) { player.skipNext() }
@@ -704,9 +767,9 @@ struct MiniPlayerView: View {
 struct MiniPlayerSquishStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.90 : 1)
+            .scaleEffect(configuration.isPressed ? 0.88 : 1)
             .opacity(configuration.isPressed ? 0.6 : 1)
-            .animation(.interpolatingSpring(stiffness: 350, damping: 20), value: configuration.isPressed)
+            .animation(.spring(response: 0.22, dampingFraction: 0.55), value: configuration.isPressed)
     }
 }
 
@@ -823,18 +886,44 @@ struct ArtistCard: View {
 }
 
 // MARK: - Artwork
+
+/// thread-safe artwork cache backed by NSCache.
+final class ArtworkCache {
+    static let shared = ArtworkCache()
+    private let cache = NSCache<NSString, UIImage>()
+
+    private init() {
+        cache.countLimit = 200
+    }
+
+    func image(for trackId: String) -> UIImage? {
+        cache.object(forKey: trackId as NSString)
+    }
+
+    func set(_ image: UIImage, for trackId: String) {
+        cache.setObject(image, forKey: trackId as NSString)
+    }
+
+    func remove(for trackId: String) {
+        cache.removeObject(forKey: trackId as NSString)
+    }
+}
+
 struct ArtworkImage: View {
     let trackId: String?
     let hasArtwork: Bool
     let size: CGFloat
     let cornerRadius: CGFloat
 
+    @State private var image: UIImage?
+
     var body: some View {
         ZStack {
-            if let image = loadImage() {
+            if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+                    .transition(.opacity)
             } else {
                 Color(.systemGray5)
                 Image(systemName: "music.note")
@@ -844,14 +933,39 @@ struct ArtworkImage: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .task(id: trackId) {
+            await loadAsync()
+        }
     }
 
-    private func loadImage() -> UIImage? {
-        guard hasArtwork, let trackId else { return nil }
-        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            return nil
+    private func loadAsync() async {
+        guard hasArtwork, let trackId else {
+            image = nil
+            return
         }
-        let url = docsDir.appendingPathComponent("Artwork").appendingPathComponent("\(trackId).jpg")
-        return UIImage(contentsOfFile: url.path)
+
+        // check cache first
+        if let cached = ArtworkCache.shared.image(for: trackId) {
+            image = cached
+            return
+        }
+
+        // load off the main thread
+        let loaded = await Task.detached(priority: .userInitiated) {
+            guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                return nil as UIImage?
+            }
+            let url = docsDir.appendingPathComponent("Artwork").appendingPathComponent("\(trackId).jpg")
+            return UIImage(contentsOfFile: url.path)
+        }.value
+
+        if let loaded {
+            ArtworkCache.shared.set(loaded, for: trackId)
+            withAnimation(.easeIn(duration: 0.15)) {
+                image = loaded
+            }
+        } else {
+            image = nil
+        }
     }
 }
