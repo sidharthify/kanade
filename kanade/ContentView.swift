@@ -103,6 +103,7 @@ extension View {
 // MARK: - Root View
 struct ContentView: View {
     @Environment(MusicPlayer.self) private var player
+    @Environment(AppUIState.self) private var uiState
     @State private var importer = LibraryImporter()
     @State private var showPlayer = false
 
@@ -165,6 +166,11 @@ struct ContentView: View {
                 transaction.disablesAnimations = true
                 transaction.animation = nil
             }
+        }
+        .onChange(of: selectedTab) {
+            // each tab tracks its own scroll, so start the new tab with the
+            // mini player shown rather than inheriting the last tab's tuck state.
+            uiState.miniPlayerHideProgress = 0
         }
         .onAppear {
             selectedTab = defaultTab
@@ -569,12 +575,6 @@ struct MiniPlayerView: View {
     private var leftProgress:  CGFloat { max(0, min(1, -dragOffset.width / skipThreshold)) }
     private var rightProgress: CGFloat { max(0, min(1,  dragOffset.width / skipThreshold)) }
 
-    private var playbackFraction: CGFloat {
-        guard player.duration.isFinite, player.duration > 0,
-              player.currentTime.isFinite else { return 0 }
-        return CGFloat(min(max(player.currentTime / player.duration, 0), 1))
-    }
-
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
@@ -661,29 +661,7 @@ struct MiniPlayerView: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, 10)
-                .padding(.bottom, 10)
-
-                // fully integrated, full-width progress bar at the very bottom edge.
-                // clipped to the pill's bottom corners so it never spills past them.
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.06))
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.35))
-                            .frame(width: geo.size.width * playbackFraction)
-                            .animation(.linear(duration: 0.5), value: playbackFraction)
-                    }
-                }
-                .frame(height: 2.5)
-                .clipShape(
-                    UnevenRoundedRectangle(
-                        bottomLeadingRadius: 16,
-                        bottomTrailingRadius: 16,
-                        style: .continuous
-                    )
-                )
+                .padding(.vertical, 10)
             }
             .background {
                 if #available(iOS 26.0, *) {

@@ -288,9 +288,11 @@ struct PlayerView: View {
 
     private var toolbar: some View {
         // fixed row height with equally framed icons keeps every control on the
-        // same centre line, so the EQ button lines up with the rest.
+        // same centre line, and the volume slider shares that height so its track
+        // lands on the icons rather than floating above them.
         HStack(spacing: 0) {
             VolumeSlider()
+                .frame(height: 44)
                 .frame(maxWidth: 120, alignment: .leading)
 
             Spacer(minLength: 0)
@@ -299,6 +301,9 @@ struct PlayerView: View {
                 Image(systemName: "slider.vertical.3")
                     .font(.title3)
                     .foregroundStyle(.white.opacity(0.7))
+                    // slider.vertical.3 is a centre-style glyph that renders a touch
+                    // lower than the text-style icons, so lift it onto their line.
+                    .offset(y: -1.5)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }

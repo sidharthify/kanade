@@ -132,6 +132,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .hidesMiniPlayerAtBottom()
         }
     }
 }
