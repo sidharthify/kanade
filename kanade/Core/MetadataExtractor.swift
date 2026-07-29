@@ -13,6 +13,8 @@ struct AssetMetadata {
     let artist: String?
     let album: String?
     let artworkData: Data?
+    let trackNumber: Int?
+    let discNumber: Int?
 }
 
 enum MetadataExtractor {
@@ -39,17 +41,46 @@ enum MetadataExtractor {
             keyStrings: ["metadata_block_picture", "coverart", "cover", "picture", "artwork"]
         )
 
-        if artwork == nil, let url = fileURL {
-            artwork = ArtworkExtractor.flacArtwork(from: url)
+        var trackNumber = await items.firstInt(
+            identifiers: [.id3MetadataTrackNumber, .iTunesMetadataTrackNumber],
+            keyStrings: ["track", "tracknumber", "tracknum", "trkn"]
+        )
+        var discNumber = await items.firstInt(
+            identifiers: [.id3MetadataPartOfASet, .iTunesMetadataDiscNumber],
+            keyStrings: ["disc", "discnumber", "disknumber", "disk", "disknum"]
+        )
+
+        // AVFoundation doesn't surface Vorbis comments (track/disc numbers) for FLAC,
+        // so parse the FLAC VORBIS_COMMENT block directly as a fallback.
+        if let url = fileURL, url.pathExtension.lowercased() == "flac" {
+            if artwork == nil {
+                artwork = ArtworkExtractor.flacArtwork(from: url)
+            }
+            if trackNumber == nil || discNumber == nil {
+                let comments = ArtworkExtractor.flacVorbisComments(from: url)
+                if trackNumber == nil { trackNumber = parseLeadingInt(comments["TRACKNUMBER"]) }
+                if discNumber == nil { discNumber = parseLeadingInt(comments["DISCNUMBER"]) }
+            }
         }
 
         return AssetMetadata(
             title: title,
             artist: artist,
             album: album,
-            artworkData: artwork
+            artworkData: artwork,
+            trackNumber: trackNumber,
+            discNumber: discNumber
         )
     }
+}
+
+// parses the leading integer from a tag value like "3", "3/12", or " 04 ".
+func parseLeadingInt(_ value: String?) -> Int? {
+    guard let value else { return nil }
+    let head = value.split(separator: "/").first.map(String.init) ?? value
+    let trimmed = head.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let n = Int(trimmed), n > 0 else { return nil }
+    return n
 }
 
 private extension Array where Element == AVMetadataItem {
@@ -87,6 +118,34 @@ private extension Array where Element == AVMetadataItem {
         }
 
         return nil
+    }
+
+    func firstInt(identifiers: [AVMetadataIdentifier], keyStrings: [String]) async -> Int? {
+        // try known identifiers first (ID3 TRCK/TPOS, iTunes trkn/disk)
+        for identifier in identifiers {
+            guard let item = first(where: { $0.identifier == identifier }) else { continue }
+            if let number = try? await item.load(.numberValue) { return number.intValue }
+            if let string = try? await item.load(.stringValue), let value = parseLeadingInt(string) { return value }
+            if let data = try? await item.load(.dataValue), let value = Self.parseTrackNumberData(data) { return value }
+        }
+
+        // fall back to matching raw key strings
+        let lowered = Set(keyStrings.map { $0.lowercased() })
+        if let item = first(where: { matches($0, in: lowered) }) {
+            if let string = try? await item.load(.stringValue), let value = parseLeadingInt(string) { return value }
+            if let number = try? await item.load(.numberValue) { return number.intValue }
+            if let data = try? await item.load(.dataValue), let value = Self.parseTrackNumberData(data) { return value }
+        }
+
+        return nil
+    }
+
+    // iTunes trkn/disk atoms are binary, laid out as [00 00, trackHi trackLo, totalHi totalLo, ...].
+    private static func parseTrackNumberData(_ data: Data) -> Int? {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 4 else { return nil }
+        let value = (Int(bytes[2]) << 8) | Int(bytes[3])
+        return value > 0 ? value : nil
     }
 
     private func matches(_ item: AVMetadataItem, in keys: Set<String>) -> Bool {
@@ -189,6 +248,79 @@ private enum ArtworkExtractor {
         }
 
         return nil
+    }
+
+    // parse FLAC metadata blocks to find and decode the VORBIS_COMMENT block,
+    // returning tag key/value pairs with upper-cased keys like "TRACKNUMBER".
+    static func flacVorbisComments(from url: URL) -> [String: String] {
+        guard url.pathExtension.lowercased() == "flac" else { return [:] }
+
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+
+            guard let signature = try readExactly(from: handle, count: 4),
+                  signature == Data([0x66, 0x4C, 0x61, 0x43]) else {
+                return [:]
+            }
+
+            while true {
+                guard let header = try readExactly(from: handle, count: 4) else { return [:] }
+                let first = header[0]
+                let isLast = (first & 0x80) != 0
+                let type = Int(first & 0x7F)
+                let length = (Int(header[1]) << 16) | (Int(header[2]) << 8) | Int(header[3])
+
+                guard let blockData = try readExactly(from: handle, count: length) else { return [:] }
+                // type 4 = VORBIS_COMMENT metadata block.
+                if type == 4 {
+                    return parseVorbisComments([UInt8](blockData))
+                }
+
+                if isLast { break }
+            }
+        } catch {
+            print("[MetadataExtractor] Failed to read FLAC vorbis comments: \(error)")
+        }
+
+        return [:]
+    }
+
+    // Vorbis comment payload has a vendor length and vendor string, then a list
+    // of "KEY=value" entries. All lengths are little-endian uint32.
+    private static func parseVorbisComments(_ bytes: [UInt8]) -> [String: String] {
+        var cursor = 0
+
+        func readUInt32LE() -> Int? {
+            guard cursor + 4 <= bytes.count else { return nil }
+            let value = Int(bytes[cursor])
+                | (Int(bytes[cursor + 1]) << 8)
+                | (Int(bytes[cursor + 2]) << 16)
+                | (Int(bytes[cursor + 3]) << 24)
+            cursor += 4
+            return value
+        }
+
+        guard let vendorLength = readUInt32LE(), vendorLength >= 0 else { return [:] }
+        cursor += vendorLength
+        guard let count = readUInt32LE(), count >= 0 else { return [:] }
+
+        var result: [String: String] = [:]
+        for _ in 0..<count {
+            guard let length = readUInt32LE(), length >= 0, cursor + length <= bytes.count else { break }
+            let slice = bytes[cursor..<(cursor + length)]
+            cursor += length
+
+            guard let comment = String(bytes: slice, encoding: .utf8),
+                  let separator = comment.firstIndex(of: "=") else { continue }
+            let key = comment[..<separator].uppercased()
+            let value = String(comment[comment.index(after: separator)...])
+            if result[key] == nil {
+                result[key] = value
+            }
+        }
+
+        return result
     }
 
     // read a fixed number of bytes from the file handle.

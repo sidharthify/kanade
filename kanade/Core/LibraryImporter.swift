@@ -109,6 +109,8 @@ final class LibraryImporter {
                 filename: relativeFilename,
                 sourceHash: sourceHash,
                 hasArtwork: hasArtwork,
+                trackNumber: metadata.trackNumber,
+                discNumber: metadata.discNumber,
                 addedAt: Date().timeIntervalSince1970
             )
 
@@ -217,6 +219,32 @@ final class LibraryImporter {
             return nil
         }
         return value
+    }
+}
+
+/// one-time backfill of track/disc numbers for tracks imported before v5.
+/// reads each unscanned file once and records its numbers so album ordering works
+/// without forcing the user to re-import their library.
+enum MetadataBackfill {
+    static func run() async {
+        guard let tracks = try? DatabaseManager.shared.tracksNeedingNumberScan(), !tracks.isEmpty else { return }
+        guard let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+
+        for track in tracks {
+            let url = docsDir.appendingPathComponent(track.filename)
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                // file is gone, mark scanned so we don't retry every launch.
+                try? DatabaseManager.shared.updateTrackNumbers(id: track.id, trackNumber: nil, discNumber: nil)
+                continue
+            }
+            let asset = AVURLAsset(url: url)
+            let metadata = await MetadataExtractor.extract(from: asset, fileURL: url)
+            try? DatabaseManager.shared.updateTrackNumbers(
+                id: track.id,
+                trackNumber: metadata.trackNumber,
+                discNumber: metadata.discNumber
+            )
+        }
     }
 }
 

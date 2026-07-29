@@ -67,6 +67,39 @@ extension View {
     }
 }
 
+enum MiniPlayerMetrics {
+    /// points of remaining scroll at which the tuck-away starts.
+    static let hideThreshold: CGFloat = 76
+    /// how far down the mini player travels once fully tucked away.
+    static let hideOffset: CGFloat = 100
+}
+
+// tracks how close a scroll view is to its bottom and tucks the mini player away
+// so the final rows are never left stuck behind it, the way Apple Music does.
+struct MiniPlayerScrollHiding: ViewModifier {
+    @Environment(AppUIState.self) private var uiState
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: Double.self) { geo in
+                let maxOffset = Double(geo.contentSize.height + geo.contentInsets.bottom - geo.containerSize.height)
+                guard maxOffset > 1 else { return 0 }
+                let distance = maxOffset - Double(geo.contentOffset.y)
+                return 1 - min(max(distance / Double(MiniPlayerMetrics.hideThreshold), 0), 1)
+            } action: { _, progress in
+                uiState.miniPlayerHideProgress = progress
+            }
+            .onAppear { uiState.miniPlayerHideProgress = 0 }
+            .onDisappear { uiState.miniPlayerHideProgress = 0 }
+    }
+}
+
+extension View {
+    func hidesMiniPlayerAtBottom() -> some View {
+        self.modifier(MiniPlayerScrollHiding())
+    }
+}
+
 // MARK: - Root View
 struct ContentView: View {
     @Environment(MusicPlayer.self) private var player
@@ -135,6 +168,9 @@ struct ContentView: View {
         }
         .onAppear {
             selectedTab = defaultTab
+        }
+        .task {
+            await MetadataBackfill.run()
         }
     }
 }
@@ -290,6 +326,7 @@ struct LibraryView: View {
                 }
             }
             .listStyle(.plain)
+            .hidesMiniPlayerAtBottom()
 
         case .albums:
             ScrollView {
@@ -312,6 +349,7 @@ struct LibraryView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
             }
+            .hidesMiniPlayerAtBottom()
 
         case .artists:
             ScrollView {
@@ -334,6 +372,7 @@ struct LibraryView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
             }
+            .hidesMiniPlayerAtBottom()
         }
     }
 
@@ -435,6 +474,7 @@ struct AlbumDetailView: View {
             }
         }
         .listStyle(.plain)
+        .hidesMiniPlayerAtBottom()
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.large)
         .onAppear { load() }
@@ -484,6 +524,7 @@ struct ArtistDetailView: View {
             }
         }
         .listStyle(.plain)
+        .hidesMiniPlayerAtBottom()
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.large)
         .onAppear { load() }
@@ -623,7 +664,8 @@ struct MiniPlayerView: View {
                 .padding(.top, 10)
                 .padding(.bottom, 10)
 
-                // fully integrated, full-width progress bar at the very bottom edge
+                // fully integrated, full-width progress bar at the very bottom edge.
+                // clipped to the pill's bottom corners so it never spills past them.
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Rectangle()
@@ -635,6 +677,13 @@ struct MiniPlayerView: View {
                     }
                 }
                 .frame(height: 2.5)
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        bottomLeadingRadius: 16,
+                        bottomTrailingRadius: 16,
+                        style: .continuous
+                    )
+                )
             }
             .background {
                 if #available(iOS 26.0, *) {
@@ -660,6 +709,9 @@ struct MiniPlayerView: View {
             }
         }
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        .offset(y: CGFloat(uiState.miniPlayerHideProgress) * MiniPlayerMetrics.hideOffset)
+        .opacity(1 - uiState.miniPlayerHideProgress)
+        .allowsHitTesting(uiState.miniPlayerHideProgress < 0.5)
         .confirmationDialog(player.currentTitle, isPresented: $showMiniPlayerOptions, titleVisibility: .visible) {
             Button { player.skipPrevious() } label: { Text("Previous Track") }
             Button { player.skipNext() } label: { Text("Next Track") }

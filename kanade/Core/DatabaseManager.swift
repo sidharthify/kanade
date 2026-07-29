@@ -165,6 +165,16 @@ final class DatabaseManager {
             try db.create(index: "track_sourceHash_idx", on: "track", columns: ["sourceHash"])
         }
 
+        // track/disc numbers so album songs keep their tagged order.
+        // numbersScanned guards the one-time backfill for tracks imported before v5.
+        migrator.registerMigration("v5_track_numbers") { db in
+            try db.alter(table: "track") { t in
+                t.add(column: "trackNumber", .integer)
+                t.add(column: "discNumber", .integer)
+                t.add(column: "numbersScanned", .boolean).notNull().defaults(to: false)
+            }
+        }
+
         try migrator.migrate(dbQueue)
     }
     
@@ -192,6 +202,9 @@ final class DatabaseManager {
                 filename: payload.filename,
                 sourceHash: payload.sourceHash,
                 hasArtwork: payload.hasArtwork,
+                trackNumber: payload.trackNumber,
+                discNumber: payload.discNumber,
+                numbersScanned: true,
                 addedAt: payload.addedAt
             )
             try track.insert(db)
@@ -287,7 +300,13 @@ final class DatabaseManager {
         try dbQueue.read { db in
             try TrackRecord.fetchAll(
                 db,
-                sql: "SELECT * FROM track WHERE albumId = ? ORDER BY LOWER(title) ASC",
+                sql: """
+                    SELECT * FROM track
+                    WHERE albumId = ?
+                    ORDER BY discNumber IS NULL, discNumber ASC,
+                             trackNumber IS NULL, trackNumber ASC,
+                             LOWER(title) ASC
+                """,
                 arguments: [albumId]
             )
         }
@@ -297,8 +316,33 @@ final class DatabaseManager {
         try dbQueue.read { db in
             try TrackRecord.fetchAll(
                 db,
-                sql: "SELECT * FROM track WHERE artistId = ? ORDER BY LOWER(album) ASC, LOWER(title) ASC",
+                sql: """
+                    SELECT * FROM track
+                    WHERE artistId = ?
+                    ORDER BY LOWER(album) ASC,
+                             discNumber IS NULL, discNumber ASC,
+                             trackNumber IS NULL, trackNumber ASC,
+                             LOWER(title) ASC
+                """,
                 arguments: [artistId]
+            )
+        }
+    }
+
+    // MARK: - Track number backfill
+
+    /// tracks imported before v5 that still need their track/disc numbers scanned.
+    func tracksNeedingNumberScan() throws -> [TrackRecord] {
+        try dbQueue.read { db in
+            try TrackRecord.fetchAll(db, sql: "SELECT * FROM track WHERE numbersScanned = 0")
+        }
+    }
+
+    func updateTrackNumbers(id: String, trackNumber: Int?, discNumber: Int?) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE track SET trackNumber = ?, discNumber = ?, numbersScanned = 1 WHERE id = ?",
+                arguments: [trackNumber, discNumber, id]
             )
         }
     }
@@ -435,5 +479,7 @@ struct TrackImportPayload {
     let filename: String
     let sourceHash: String?
     let hasArtwork: Bool
+    let trackNumber: Int?
+    let discNumber: Int?
     let addedAt: Double
 }

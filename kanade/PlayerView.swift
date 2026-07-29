@@ -287,30 +287,44 @@ struct PlayerView: View {
 
 
     private var toolbar: some View {
-        HStack {
+        // fixed row height with equally framed icons keeps every control on the
+        // same centre line, so the EQ button lines up with the rest.
+        HStack(spacing: 0) {
             VolumeSlider()
-                .frame(height: 32)
-                .frame(maxWidth: 110)
-            Spacer()
+                .frame(maxWidth: 120, alignment: .leading)
+
+            Spacer(minLength: 0)
+
             Button { showEQ = true } label: {
                 Image(systemName: "slider.vertical.3")
                     .font(.title3)
                     .foregroundStyle(.white.opacity(0.7))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
-            Spacer()
+
+            Spacer(minLength: 0)
+
             Button { showLyrics = true } label: {
                 Image(systemName: "text.quote")
                     .font(.title3)
                     .foregroundStyle(lyrics.hasLyrics || lyrics.isLoading ? .white : .white.opacity(0.35))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Lyrics")
-            Spacer()
+
+            Spacer(minLength: 0)
+
             Button { showQueue = true } label: {
                 Image(systemName: "list.bullet")
                     .font(.title3)
                     .foregroundStyle(.white.opacity(0.7))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
         }
+        .frame(height: 44)
     }
 
     // MARK: - Helpers
